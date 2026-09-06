@@ -1,0 +1,151 @@
+# Requires golangci-lint >= v2.7 (Go 1.26).
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - copyloopvar
+    - decorder
+    - dupl
+    - errname
+    - errorlint
+    - exhaustive
+    - forcetypeassert
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - godot
+    - godox
+    - gomoddirectives
+    - gosec
+    - intrange
+    - lll
+    - maintidx
+    - makezero
+    - mirror
+    - misspell
+    - nestif
+    - nilerr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - prealloc
+    - revive
+    - tagliatelle
+    - testifylint
+    - testpackage
+    - tparallel
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - usetesting
+    - wrapcheck
+  settings:
+    dupl:
+      # Lower values flag table-driven tests.
+      threshold: 100
+    gocyclo:
+      min-complexity: 10
+    godot:
+      # Every comment is a sentence, not only declaration comments.
+      scope: all
+    lll:
+      line-length: 120
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: atomic
+        - name: bare-return
+        - name: blank-imports
+        - name: bool-literal-in-expr
+        - name: confusing-naming
+        - name: confusing-results
+        - name: constant-logical-expr
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: deep-exit
+        - name: defer
+        - name: dot-imports
+        - name: duplicated-imports
+        - name: early-return
+        - name: empty-block
+        - name: empty-lines
+        - name: error-naming
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: identical-branches
+        - name: if-return
+        - name: import-shadowing
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: modifies-value-receiver
+        - name: range
+        - name: receiver-naming
+        - name: redefines-builtin-id
+        - name: string-of-int
+        - name: struct-tag
+        - name: superfluous-else
+        - name: time-naming
+        - name: unconditional-recursion
+        - name: unexported-naming
+        - name: unexported-return
+        - name: unhandled-error
+        - name: unnecessary-stmt
+        - name: unreachable-code
+        - name: unused-parameter
+          # Test helpers and subtests often have imposed signatures.
+          exclude:
+            - "**/*_test.go"
+        - name: unused-receiver
+        - name: var-declaration
+        - name: var-naming
+        - name: waitgroup-by-value
+    tagliatelle:
+      case:
+        rules:
+          json: camel
+    usetesting:
+      os-temp-dir: true
+  # No exclusion preset on purpose: the "comments" preset would silence
+  # revive's exported and package-comments rules.
+  exclusions:
+    generated: lax
+
+issues:
+  # Defaults truncate to 50 per linter and 3 per identical message. An
+  # agent that fixes the first 50 and sees "0 issues" believes it is done.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # One issue per line hides a second linter's finding on the same line.
+  uniq-by-line: false
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(gitlab.com/hich-hich/cove)
+
+severity:
+  default: medium
+  rules:
+    - linters:
+        - dupl
+      severity: major

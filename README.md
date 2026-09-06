@@ -1,4 +1,3 @@
-<!-- rename the H1 to your repository name -->
 # Unsupervised coding-agent sandbox with empty-room isolation.
 
 Run a coding agent on a repository **without approving each step**,
@@ -58,8 +57,6 @@ forge- and model-agnostic later.
 ## Design notes
 
 The scoping documents — threat model, adversary model, surfaces, requirements —
-live alongside the code. *(Written in French for now.)*
+live alongside the code, split into short files under
+[docs/cadrage/](docs/cadrage/README.md). *(Written in French for now.)*
 
-## License
-
-Apache-2.0.
