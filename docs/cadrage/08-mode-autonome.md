@@ -1,7 +1,12 @@
 # 12. Mode autonome (post-MVP)
 
 Le MVP est interactif et supervisé : la session complète vit dans le REPL de
-Claude Code, l'humain répond au terminal, rien à concevoir. Ce paragraphe conçoit
+Claude Code, l'humain répond au terminal, rien à concevoir. Le terminal
+rattaché par `container exec -it` est un PTY dont les octets traversent bruts,
+séquences d'échappement comprises (D10) : c'est une exception à R6 (S17),
+acceptée pour le MVP interactif en local parce qu'un humain regarde ce terminal et que
+le wrapper n'y interprète rien lui-même ; le mode autonome, sans terminal, n'en
+hérite pas. Ce paragraphe conçoit
 le régime **autonome** qui vient après — quand aucun humain n'est dans la boucle.
 C'est de la conception, cohérente avec P0 et P6 ; elle n'est pas requise pour le
 MVP.

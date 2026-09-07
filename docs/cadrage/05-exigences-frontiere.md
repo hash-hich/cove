@@ -68,6 +68,13 @@ Le transport lui-même ne doit rien déclencher côté récepteur :
 - **Refspec explicite et étroit**, vers une référence que *le wrapper* nomme.
   Jamais `refs/*`, jamais `--tags`, jamais un mirror — c'est ce qui ramènerait
   `refs/replace/` (S26).
+- **Cibles nommées par le wrapper, jamais par l'agent.** Vocabulaire : la
+  *cible de récupération* est l'unique référence que le wrapper nomme dans le
+  dépôt récepteur ; la *cible de publication* est la branche d'agent que le
+  wrapper pousse vers la forge (§8). L'agent ne choisit ni l'une ni l'autre. La
+  branche de base de la MR, `main` et toute branche protégée ne sont jamais
+  des cibles de publication, aucun push forcé n'est émis, et un run qui ne
+  doit rien publier a une cible de publication vide.
 - **Push par SHA, pas par référence mutable** : ce qui est poussé et rendu à
   l'owner est exactement l'objet inspecté par R7′ (fermeture de la fenêtre
   inspection→push).

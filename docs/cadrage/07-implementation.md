@@ -49,10 +49,32 @@ version épinglée soit celle qui s'exécute. Ses garanties sont structurelles
 (P2) : le Dockerfile est la spec et le build le test ; ce qui peut les défaire
 est l'appel du wrapper (montages, variables, utilisateur), testé en Go avec
 lui. Les chaînes d'outils propres à un projet viennent en couche au-dessus de
-cette base. La
+cette base. 
+
+**Pilotage (D10)** : le CLI `container` (1.3.1) exécuté par
+tableau d'arguments, jamais le framework Swift ; cove ne parse que le stdout
+JSON de `list` et `inspect`. Cove est une interface entre le moteur de VM
+(`container` aujourd'hui, Firecracker demain) et le harnais : un CLI sans
+démon, à la manière de terraform. Une VM survit à la fin de cove comme à celle
+du CLI `container` (service launchd propre, signaux au CLI non transmis) ; sa
+destruction est un verbe explicite, jamais un effet de bord. 
+
+**Réseau (D10)** :
+la VM reçoit une adresse non stable du réseau NAT `default`
+(`192.168.64.0/24`), lue après démarrage ; l'hôte n'est joignable qu'à
+l'adresse de passerelle `192.168.64.1` sur `bridge100`, interface partagée par
+les VMs qui n'existe que pendant qu'une VM tourne ; l'hôte ne joint jamais la
+VM ; le LAN, internet et les autres VMs du même réseau sont joignables (S32),
+un réseau NAT par run isole les runs entre eux, le mode `--internal` coupe
+tout, hôte compris, et le LAN se ferme depuis l'invité par nftables, posé en
+root par `exec` avant l'agent avec `--cap-add NET_ADMIN` au lancement, internet
+restant ouvert (S32). Pour l'instant la VM parle directement à l'API Anthropic ;
+le broker (D1) est hors périmètre. La
 récupération se fait par `git fetch` depuis un dépôt interne à l'invité, jamais
-par un bind-mount en écriture du répertoire de travail (R8). Repli Tart/Lima
-si le poste n'est pas sur macOS 26.
+par un bind-mount en écriture du répertoire de travail (R8).
+**Plafonds (R4, D5)** : CPU et mémoire par `--cpus` et `--memory` (la mémoire
+dépassée vaut un OOM kill, exit 137) ; disque et durée n'ont aucun drapeau
+dans `container`. Repli Tart/Lima si le poste n'est pas sur macOS 26.
 
 **Langage — Go, pour le wrapper et le broker.** Binaire statique, pile HTTP de
 la bibliothèque standard (éprouvée), exec de `git` par tableaux d'arguments

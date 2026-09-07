@@ -16,11 +16,11 @@ toujours la même chose, quel que soit le fichier.
 | Sections | Fichier | Contenu | À lire quand… |
 |---|---|---|---|
 | §1–§4 | [01-probleme-et-perimetre.md](01-probleme-et-perimetre.md) | Le problème, les quatre composants, ce qu'on protège ou non, le modèle d'adversaire | on touche au périmètre, on ajoute un composant ou un flux |
-| §5 | [02-surfaces.md](02-surfaces.md) | Catalogue des surfaces S01–S31 et leur traitement | on évalue un nouveau risque ou on cite une surface |
+| §5 | [02-surfaces.md](02-surfaces.md) | Catalogue des surfaces S01 à S32 et leur traitement | on évalue un nouveau risque ou on cite une surface |
 | §6 | [03-principes.md](03-principes.md) | Principes P0–P6 : les invariants qui tranchent les arbitrages | un arbitrage n'est couvert par aucune exigence |
 | §7 (R1–R5) | [04-exigences-sandbox.md](04-exigences-sandbox.md) | Ce que la boîte voit, ne contient pas, ce qui la borne et la détruit | on travaille sur l'image, les montages, les plafonds, le teardown |
 | §7 (R6–R9) | [05-exigences-frontiere.md](05-exigences-frontiere.md) | Wrapper, inspection de la sortie, canal de récupération, broker ; procédure d'acceptation « agent piégé » | on travaille sur le wrapper, le push, l'inspection, le broker, les tests d'acceptation |
-| §8–§9 | [06-decisions.md](06-decisions.md) | Conditions du risque GitLab (`ci.skip`) et décisions D1 à D9 | on se demande si un choix est acté, ou avant d'en rouvrir un |
+| §8–§9 | [06-decisions.md](06-decisions.md) | Conditions du risque GitLab (`ci.skip`) et décisions D1 à D10 | on se demande si un choix est acté, ou avant d'en rouvrir un |
 | §10–§11, annexe | [07-implementation.md](07-implementation.md) | Contraintes induites, notes d'implémentation (Apple `container`, Go, topologie du broker), familles d'isolation | on choisit une technologie ou une structure de code |
 | §12 | [08-mode-autonome.md](08-mode-autonome.md) | Régime autonome post-MVP : états terminaux, reprise, fil de MR comme session | on conçoit le mode sans humain dans la boucle |
 
@@ -29,11 +29,11 @@ toujours la même chose, quel que soit le fichier.
 Un identifiant est attribué une fois et ne bouge plus, même si l'élément est
 reclassé (d'où des numéros non séquentiels).
 
-- **S01–S31** — surfaces d'attaque (§5).
+- **S01 à S32** — surfaces d'attaque (§5).
 - **P0–P6** — principes directeurs (§6).
 - **R1–R9** — exigences, chacune avec son critère de vérification (§7). « R7′ »
   a remplacé un R7 plus étroit ; les autres numéros n'ont pas bougé.
-- **D1 à D9** — décisions d'architecture (§9) ; D5 est différée.
+- **D1 à D10** — décisions d'architecture (§9) ; D5 est différée.
 
 ## Sources
 
@@ -48,4 +48,5 @@ reclassé (d'où des numéros non séquentiels).
 - [Admin API — clés et permissions](https://platform.claude.com/docs/en/manage-claude/admin-api)
 - GitLab — option de push `ci.skip` (`git push -o ci.skip`, git ≥ 2.18 ; `--push-option=ci.skip` depuis git 2.10) : crée un pipeline marqué *skipped* sans exécuter de job ; contrôle côté pousseur, non défait par un fichier du dépôt
 - Apple `container` — 1.0.0 (9 juin 2026), Apache-2.0, macOS 26 / Apple Silicon : une micro-VM légère par conteneur OCI, adossée à Virtualization.framework ; frontière d'isolation à l'hyperviseur (D6, §10, annexe)
+- Apple `container` 1.3.1 sur macOS 26.5.2, observé sur le poste (D10) : verbes et codes de sortie, réseau NAT `default` sur `bridge100` (`192.168.64.1`, présent seulement pendant qu'une VM tourne), LAN joignable, `--internal` sans aucun trafic, nftables dans l'invité avec `--cap-add NET_ADMIN`, `cp` en root, pas de plafond disque ni de durée
 - Firecracker — pilote KVM et exige un hôte Linux exposant `/dev/kvm` ; pas de support macOS (position des mainteneurs) ; sur Apple Silicon uniquement en imbriqué dans une VM Linux (M3+/macOS 15+ pour la virtualisation imbriquée)
