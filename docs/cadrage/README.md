@@ -20,7 +20,7 @@ toujours la même chose, quel que soit le fichier.
 | §6 | [03-principes.md](03-principes.md) | Principes P0–P6 : les invariants qui tranchent les arbitrages | un arbitrage n'est couvert par aucune exigence |
 | §7 (R1–R5) | [04-exigences-sandbox.md](04-exigences-sandbox.md) | Ce que la boîte voit, ne contient pas, ce qui la borne et la détruit | on travaille sur l'image, les montages, les plafonds, le teardown |
 | §7 (R6–R9) | [05-exigences-frontiere.md](05-exigences-frontiere.md) | Wrapper, inspection de la sortie, canal de récupération, broker ; procédure d'acceptation « agent piégé » | on travaille sur le wrapper, le push, l'inspection, le broker, les tests d'acceptation |
-| §8–§9 | [06-decisions.md](06-decisions.md) | Conditions du risque GitLab (`ci.skip`) et décisions D1–D8 | on se demande si un choix est acté, ou avant d'en rouvrir un |
+| §8–§9 | [06-decisions.md](06-decisions.md) | Conditions du risque GitLab (`ci.skip`) et décisions D1 à D9 | on se demande si un choix est acté, ou avant d'en rouvrir un |
 | §10–§11, annexe | [07-implementation.md](07-implementation.md) | Contraintes induites, notes d'implémentation (Apple `container`, Go, topologie du broker), familles d'isolation | on choisit une technologie ou une structure de code |
 | §12 | [08-mode-autonome.md](08-mode-autonome.md) | Régime autonome post-MVP : états terminaux, reprise, fil de MR comme session | on conçoit le mode sans humain dans la boucle |
 
@@ -33,12 +33,17 @@ reclassé (d'où des numéros non séquentiels).
 - **P0–P6** — principes directeurs (§6).
 - **R1–R9** — exigences, chacune avec son critère de vérification (§7). « R7′ »
   a remplacé un R7 plus étroit ; les autres numéros n'ont pas bougé.
-- **D1–D8** — décisions d'architecture (§9) ; D5 est différée.
+- **D1 à D9** — décisions d'architecture (§9) ; D5 est différée.
 
 ## Sources
 
 - [Claude Code — Authentication](https://code.claude.com/docs/en/authentication) : `claude setup-token`, portée du jeton (« It can only make model requests »), ordre de précédence des credentials, `ANTHROPIC_AUTH_TOKEN` et `ANTHROPIC_BASE_URL`
 - Restriction du jeton d'abonnement à un usage *avec Claude Code* (rejet « only authorized for use with Claude Code » hors de ce contexte) — à revérifier avant implémentation du broker (D1, risque résiduel n°1)
+- [Claude Code, Advanced setup](https://code.claude.com/docs/en/setup) : installation native (`install.sh` accepte une version exacte), paquet npm qui n'enveloppe que le même binaire natif, Alpine et musl (`libgcc`, `libstdc++`, `ripgrep`, `USE_BUILTIN_RIPGREP=0`), `manifest.json` signé par release avec SHA256 par plateforme, empreinte de la clé de signature (D9)
+- Claude Code, canaux de publication : `https://downloads.claude.ai/claude-code-releases/stable` et `.../latest` donnent la version courante de chaque canal ; le binaire d'une release est à `<version>/linux-arm64/claude` (D9)
+- [Claude Code, Environment variables](https://code.claude.com/docs/en/env-vars) : `DISABLE_UPDATES` bloque aussi `claude update` et `claude install`, plus strict que `DISABLE_AUTOUPDATER` ; `CLAUDE_CONFIG_DIR` (D9)
+- [Claude Code, Permission modes](https://code.claude.com/docs/en/permission-modes) : `--dangerously-skip-permissions` refusé sous root ou sudo sur Linux et macOS, exécution non supervisée en conteneur avec un utilisateur non root (D9)
+- [Debian, image officielle](https://hub.docker.com/_/debian) : `debian:trixie-slim`, index multi-architecture épinglé par digest (D9)
 - [Files API — scoping et accès](https://platform.claude.com/docs/en/build-with-claude/files)
 - [Admin API — clés et permissions](https://platform.claude.com/docs/en/manage-claude/admin-api)
 - GitLab — option de push `ci.skip` (`git push -o ci.skip`, git ≥ 2.18 ; `--push-option=ci.skip` depuis git 2.10) : crée un pipeline marqué *skipped* sans exécuter de job ; contrôle côté pousseur, non défait par un fichier du dépôt

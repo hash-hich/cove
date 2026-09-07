@@ -40,9 +40,19 @@ exigences.
 
 **Isolation — Apple `container` (D6).** Image OCI minimale ne contenant que la
 chaîne d'outils nécessaire à la tâche ; aucun montage du `$HOME` ni d'un chemin
-du poste (R1 par absence). La récupération se fait par `git fetch` depuis un
-dépôt interne à l'invité, jamais par un bind-mount en écriture du répertoire de
-travail (R8). Repli Tart/Lima si le poste n'est pas sur macOS 26.
+du poste (R1 par absence). L'image de base est définie dans `images/sandbox/`
+(D9) : Debian trixie slim épinglée par digest, binaire natif de Claude Code
+épinglé par version et SHA256, `git` et les outils courants du modèle
+(curl, jq, patch, ps, python3), utilisateur `agent` (uid 1000) avec
+`/home/agent` vide et le dépôt dans `/work`, `DISABLE_UPDATES=1` pour que la
+version épinglée soit celle qui s'exécute. Ses garanties sont structurelles
+(P2) : le Dockerfile est la spec et le build le test ; ce qui peut les défaire
+est l'appel du wrapper (montages, variables, utilisateur), testé en Go avec
+lui. Les chaînes d'outils propres à un projet viennent en couche au-dessus de
+cette base. La
+récupération se fait par `git fetch` depuis un dépôt interne à l'invité, jamais
+par un bind-mount en écriture du répertoire de travail (R8). Repli Tart/Lima
+si le poste n'est pas sur macOS 26.
 
 **Langage — Go, pour le wrapper et le broker.** Binaire statique, pile HTTP de
 la bibliothèque standard (éprouvée), exec de `git` par tableaux d'arguments

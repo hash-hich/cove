@@ -22,6 +22,7 @@ go test ./...                           # all tests
 go test ./internal/<pkg> -run TestName  # single test
 golangci-lint fmt                       # format (gofumpt + gci)
 golangci-lint run                       # lint (CI gate, also reports formatting drift)
+container build --platform linux/arm64 -t cove-sandbox:local images/sandbox   # build the sandbox image
 ```
 
 Definition of done: `golangci-lint fmt` leaves no diff, `golangci-lint run && go test ./...` green, and the touched command manually exercised via `go run`.
