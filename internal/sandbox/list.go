@@ -9,7 +9,8 @@ import (
 )
 
 // VM is what cove reads of a container list entry: enough to tell its sandboxes from the other
-// VMs of the store and the running ones from the stopped ones. Nothing else is parsed (D10).
+// VMs of the store, and the cells container list shows for them. The rest of the entry, which
+// carries the whole configuration of the VM, is not parsed (D10).
 type VM struct {
 	// ID is the VM identifier, the name given at run or the one container generated.
 	ID string
@@ -17,6 +18,20 @@ type VM struct {
 	Labels map[string]string
 	// State is the container state, "running" or "stopped".
 	State string
+	// Image is the image reference the VM was created from.
+	Image string
+	// OS and Architecture are the platform of the image, "linux" and "arm64" for a sandbox.
+	OS           string
+	Architecture string
+	// IPv4Address is the address of the VM on its network, with its prefix length; empty once the
+	// VM is stopped, since container then reports no network.
+	IPv4Address string
+	// CPUs is the number of vCPUs, and MemoryInBytes the memory limit.
+	CPUs          int
+	MemoryInBytes int64
+	// StartedDate is when the VM was last started, in RFC 3339. Container keeps it on a stopped
+	// VM, where it no longer describes anything.
+	StartedDate string
 }
 
 // IsSandbox reports whether cove launched v: only these VMs may be stopped by cove, since the
@@ -53,9 +68,25 @@ type listEntry struct {
 	Configuration struct {
 		ID     string            `json:"id"`
 		Labels map[string]string `json:"labels"`
+		Image  struct {
+			Reference string `json:"reference"`
+		} `json:"image"`
+		Platform struct {
+			OS           string `json:"os"`
+			Architecture string `json:"architecture"`
+		} `json:"platform"`
+		Resources struct {
+			CPUs          int   `json:"cpus"`
+			MemoryInBytes int64 `json:"memoryInBytes"`
+		} `json:"resources"`
 	} `json:"configuration"`
 	Status struct {
-		State string `json:"state"`
+		State       string `json:"state"`
+		StartedDate string `json:"startedDate"`
+		// Networks is empty on a stopped VM; container shows the address of the first one.
+		Networks []struct {
+			IPv4Address string `json:"ipv4Address"`
+		} `json:"networks"`
 	} `json:"status"`
 }
 
@@ -67,11 +98,21 @@ func parseList(data []byte) ([]VM, error) {
 	}
 	vms := make([]VM, 0, len(entries))
 	for _, entry := range entries {
-		vms = append(vms, VM{
-			ID:     entry.Configuration.ID,
-			Labels: entry.Configuration.Labels,
-			State:  entry.Status.State,
-		})
+		vm := VM{
+			ID:            entry.Configuration.ID,
+			Labels:        entry.Configuration.Labels,
+			State:         entry.Status.State,
+			Image:         entry.Configuration.Image.Reference,
+			OS:            entry.Configuration.Platform.OS,
+			Architecture:  entry.Configuration.Platform.Architecture,
+			CPUs:          entry.Configuration.Resources.CPUs,
+			MemoryInBytes: entry.Configuration.Resources.MemoryInBytes,
+			StartedDate:   entry.Status.StartedDate,
+		}
+		if len(entry.Status.Networks) > 0 {
+			vm.IPv4Address = entry.Status.Networks[0].IPv4Address
+		}
+		vms = append(vms, vm)
 	}
 	return vms, nil
 }

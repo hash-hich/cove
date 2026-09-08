@@ -19,6 +19,9 @@ const (
 	unknown = "nope"
 	other   = "receiver"
 	running = "running"
+	stopped = "stopped"
+	linux   = "linux"
+	arm64   = "arm64"
 )
 
 var (
@@ -31,9 +34,24 @@ var (
 
 // store mirrors testdata/list.json.
 var store = []sandbox.VM{
-	{ID: builder, Labels: builderLabels, State: running},
-	{ID: runSB, Labels: sandboxLabels, State: running},
-	{ID: keepSB, Labels: sandboxLabels, State: "stopped"},
+	{
+		ID: builder, Labels: builderLabels, State: running,
+		Image: "ghcr.io/apple/container-builder-shim/builder:0.13.1", OS: linux, Architecture: arm64,
+		IPv4Address: "192.168.64.118/24", CPUs: 2, MemoryInBytes: 2147483648,
+		StartedDate: "2026-09-07T17:11:05Z",
+	},
+	{
+		ID: runSB, Labels: sandboxLabels, State: running,
+		Image: sandbox.Image, OS: linux, Architecture: arm64,
+		IPv4Address: "192.168.64.152/24", CPUs: 4, MemoryInBytes: 1073741824,
+		StartedDate: "2026-09-08T15:13:38Z",
+	},
+	{
+		ID: keepSB, Labels: sandboxLabels, State: stopped,
+		Image: sandbox.Image, OS: linux, Architecture: arm64,
+		CPUs: 4, MemoryInBytes: 1073741824,
+		StartedDate: "2026-09-08T15:13:42Z",
+	},
 }
 
 func TestParseList(t *testing.T) {
