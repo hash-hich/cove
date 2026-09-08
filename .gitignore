@@ -1,0 +1,10 @@
+# Build output
+bin/
+/cove
+
+# Go tooling
+*.test
+*.out
+*.prof
+go.work
+go.work.sum
