@@ -64,7 +64,7 @@ container build --platform linux/arm64 -t cove-sandbox:local images/sandbox
 go build -o bin/cove ./cmd/cove
 bin/cove run --name demo          # a micro-VM, kept alive until stopped
 container exec -it demo claude    # until cove has its own verb to talk to the agent
-container stop demo               # same
+bin/cove stop demo                # or: bin/cove stop --all
 ```
 
 `cove run` creates the sandbox and nothing else; talking to the agent and
@@ -74,6 +74,12 @@ else: cove builds the argument array itself, so a mount, a user, a working
 directory, a network option, the SSH agent or a command cannot even be asked
 for. Exit code: 0 once the VM runs; 2 on a usage error; 125 when cove could not
 launch it.
+
+`cove stop` stops sandboxes by name or ID, or every running one with `--all`,
+with the `-s` and `-t` of `docker stop`. It only ever stops VMs cove created:
+the VM store is shared with others (Apple's image builder, for one), and those
+are refused. Exit code: 0 when every target stopped; 1 when one was refused or
+unknown; 2 on a usage error; 125 when cove could not run `container`.
 
 ## Design notes
 

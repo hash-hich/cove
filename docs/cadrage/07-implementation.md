@@ -97,6 +97,24 @@ stdout (un UUID sans `--name`) et sa progression sur stderr ; `--memory 512m` en
 minuscule est accepté ; `-e` est un passe-plat total pour l'instant. Chaque VM
 porte le label `cove=sandbox`, par lequel cove reconnaît les siennes.
 
+*Arrêt.* `stop` prend un ou plusieurs noms ou identifiants, que `container`
+résout lui-même (observé sur 1.3.1 : l'identifiant est le nom, correspondance
+exacte, aucun préfixe ; un nom inconnu est signalé, les autres cibles sont
+traitées et le code est 1), ou `--all`. Les drapeaux `-s` et `-t` de
+`docker stop`, `podman stop` et `container stop` passent tels quels ; le délai
+par défaut reste celui de `container` (5 s, contre 10 chez docker et podman).
+Règle d'or : cove n'arrête jamais une VM qu'il n'a pas lancée. Le magasin de
+`container` est partagé (la VM `buildkit` d'Apple y vit), donc chaque cible est
+confrontée au label dans `list --all --format json` avant tout appel, et
+`--all` se résout en la liste des sandboxes de cove en marche, jamais en
+`container stop --all`. La garantie tient par construction ; ses deux résidus
+exigent un acteur côté hôte, hors modèle de menace : le label est posable par
+quiconque sur le poste, et une VM peut changer entre la lecture de la liste et
+l'arrêt. Codes : celui de `container`, 1 si une cible a été refusée ou est
+inconnue, 2 en erreur d'usage, 125 quand cove n'a pas pu exécuter `container`
+(comme `run` ; docker réserve 125 à `run`, podman le généralise, `container`
+ne rend que 1).
+
 **Réseau (D10)** :
 la VM reçoit une adresse non stable du réseau NAT `default`
 (`192.168.64.0/24`), lue après démarrage ; l'hôte n'est joignable qu'à
