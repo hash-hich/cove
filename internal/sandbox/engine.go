@@ -29,18 +29,23 @@ type Engine struct {
 // error only when cove itself could not launch it: ErrNotInstalled, ErrImageMissing, or a failure
 // to execute the CLI.
 func (e *Engine) Run(ctx context.Context, spec Spec) (int, error) {
-	bin, err := exec.LookPath(binary)
+	bin, err := lookPath()
 	if err != nil {
-		return 0, fmt.Errorf("%w: %w", ErrNotInstalled, err)
+		return 0, err
 	}
 	if err := checkImage(ctx, bin); err != nil {
 		return 0, err
 	}
+	return e.exec(ctx, bin, spec.Args())
+}
 
-	//nolint:gosec // G204: bin comes from LookPath and the arguments from Spec.Args, never from a shell string.
-	cmd := exec.CommandContext(ctx, bin, spec.Args()...)
+// exec runs the container CLI with args and the engine's streams attached. It returns the exit
+// code of the CLI, and an error only when it could not be executed.
+func (e *Engine) exec(ctx context.Context, bin string, args []string) (int, error) {
+	//nolint:gosec // G204: bin comes from LookPath and the arguments from a Spec, never from a shell string.
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdout, cmd.Stderr = e.Stdout, e.Stderr
-	err = cmd.Run()
+	err := cmd.Run()
 	if err == nil {
 		return 0, nil
 	}
@@ -48,6 +53,15 @@ func (e *Engine) Run(ctx context.Context, spec Spec) (int, error) {
 		return exitErr.ExitCode(), nil
 	}
 	return 0, fmt.Errorf("run %s: %w", bin, err)
+}
+
+// lookPath finds the container CLI on the PATH, or returns ErrNotInstalled.
+func lookPath() (string, error) {
+	bin, err := exec.LookPath(binary)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrNotInstalled, err)
+	}
+	return bin, nil
 }
 
 // checkImage fails before container run would: without the image in the local store, run queries
