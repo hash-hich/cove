@@ -48,6 +48,8 @@ func (a *App) Run(args []string) int {
 		return 0
 	case "run":
 		return runCommand(a, fs.Args()[1:])
+	case "stop":
+		return stopCommand(a, fs.Args()[1:])
 	default:
 		_, _ = fmt.Fprintf(a.Stderr, "unknown command %q\n", cmd)
 		printUsage(a.Stderr, fs)
@@ -62,6 +64,7 @@ func printUsage(w io.Writer, fs *flag.FlagSet) {
 	_, _ = fmt.Fprintln(w, "Commands:")
 	_, _ = fmt.Fprintln(w, "  help    Show help")
 	_, _ = fmt.Fprintln(w, "  run     Create a sandbox")
+	_, _ = fmt.Fprintln(w, "  stop    Stop sandboxes")
 	fs.SetOutput(w)
 	fs.PrintDefaults()
 }

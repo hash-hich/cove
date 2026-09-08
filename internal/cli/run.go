@@ -11,7 +11,8 @@ import (
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
-// ExitPreflight is the exit code when cove itself could not launch the sandbox, as docker's 125.
+// ExitPreflight is the exit code when cove itself could not run container, as the 125 of docker
+// run; container never returns it (every failure of its CLI is 1, D10).
 const ExitPreflight = 125
 
 // envFlag accumulates the values of a repeatable -e flag.
