@@ -11,7 +11,7 @@ import (
 // ExitUsage is the exit code for a usage error, following the flag package convention.
 const ExitUsage = 2
 
-// App holds the streams a cove invocation writes to.
+// App holds the streams of a cove invocation.
 type App struct {
 	Stdout io.Writer
 	Stderr io.Writer
@@ -46,6 +46,8 @@ func (a *App) Run(args []string) int {
 	case "help":
 		printUsage(a.Stdout, fs)
 		return 0
+	case "run":
+		return runCommand(a, fs.Args()[1:])
 	default:
 		_, _ = fmt.Fprintf(a.Stderr, "unknown command %q\n", cmd)
 		printUsage(a.Stderr, fs)
@@ -59,6 +61,7 @@ func printUsage(w io.Writer, fs *flag.FlagSet) {
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Commands:")
 	_, _ = fmt.Fprintln(w, "  help    Show help")
+	_, _ = fmt.Fprintln(w, "  run     Create a sandbox")
 	fs.SetOutput(w)
 	fs.PrintDefaults()
 }
