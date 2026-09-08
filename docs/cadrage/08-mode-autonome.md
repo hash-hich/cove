@@ -47,9 +47,9 @@ l'agent de cette sandbox, autant de fois qu'on veut, en mode piloté et borné
 (autonome) comme en mode conversationnel ; c'est lui qui porte la reprise d'une
 session, jamais `run`. `stop` arrête la VM, `kill` la tue : le coupe-circuit
 asymétrique pour un run emballé (R4/R5). Autour, les verbes de docker que les
-développeurs connaissent, `ps`, `rm`, `logs`. En local on tape le verbe
-d'interaction ; en mode forge, l'amont de D8 traduit « réponse au commentaire »
-en ce même verbe, et le wrapper reste sans surface entrante.
+développeurs connaissent, `list` (alias `ls` et `ps`), `rm`, `logs`. En local on
+tape le verbe d'interaction ; en mode forge, l'amont de D8 traduit « réponse au
+commentaire » en ce même verbe, et le wrapper reste sans surface entrante.
 
 **Reprendre après `stop` impose de persister l'état de session hors de la
 boîte.** Tant que la VM tourne, la session vit dedans et le verbe d'interaction

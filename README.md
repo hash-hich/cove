@@ -64,6 +64,7 @@ container build --platform linux/arm64 -t cove-sandbox:local images/sandbox
 go build -o bin/cove ./cmd/cove
 bin/cove run --name demo          # a micro-VM, kept alive until stopped
 container exec -it demo claude    # until cove has its own verb to talk to the agent
+bin/cove list                     # the running sandboxes; -a for the stopped ones too
 bin/cove stop demo                # or: bin/cove stop --all
 ```
 
@@ -80,6 +81,12 @@ with the `-s` and `-t` of `docker stop`. It only ever stops VMs cove created:
 the VM store is shared with others (Apple's image builder, for one), and those
 are refused. Exit code: 0 when every target stopped; 1 when one was refused or
 unknown; 2 on a usage error; 125 when cove could not run `container`.
+
+`cove list`, also spelled `ls` or `ps`, lists the running sandboxes, or every
+one with `-a`, and only their IDs with `-q`, as `docker ps`. The columns are
+those of `container list`, and `--format json` gives the same rows as an array
+of objects. Like `stop`, it only ever reports VMs cove created. Exit code: 0; 2
+on a usage error; 125 when cove could not run `container`.
 
 ## Design notes
 
