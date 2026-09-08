@@ -2,6 +2,7 @@ package sandbox_test
 
 import (
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,8 +10,32 @@ import (
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
-// TestParseList reads a container list --all --format json output recorded on 1.3.1, with Apple's
-// builder VM, a running sandbox and a stopped one kept with --keep.
+// The fixture testdata/list.json was recorded on container 1.3.1 with Apple's builder VM, a
+// running sandbox and a stopped one kept with --keep.
+const (
+	builder = "buildkit"
+	runSB   = "cove-fx-run"
+	keepSB  = "cove-fx-keep"
+	unknown = "nope"
+	other   = "receiver"
+	running = "running"
+)
+
+var (
+	builderLabels = map[string]string{
+		"com.apple.container.plugin":        "builder",
+		"com.apple.container.resource.role": "builder",
+	}
+	sandboxLabels = map[string]string{"cove": "sandbox"}
+)
+
+// store mirrors testdata/list.json.
+var store = []sandbox.VM{
+	{ID: builder, Labels: builderLabels, State: running},
+	{ID: runSB, Labels: sandboxLabels, State: running},
+	{ID: keepSB, Labels: sandboxLabels, State: "stopped"},
+}
+
 func TestParseList(t *testing.T) {
 	t.Parallel()
 
@@ -20,15 +45,7 @@ func TestParseList(t *testing.T) {
 	vms, err := sandbox.ParseList(data)
 
 	require.NoError(t, err)
-	require.Equal(t, []sandbox.VM{
-		{
-			ID:     "buildkit",
-			Labels: map[string]string{"com.apple.container.plugin": "builder", "com.apple.container.resource.role": "builder"},
-			State:  "running",
-		},
-		{ID: "cove-fx-run", Labels: map[string]string{"cove": "sandbox"}, State: "running"},
-		{ID: "cove-fx-keep", Labels: map[string]string{"cove": "sandbox"}, State: "stopped"},
-	}, vms)
+	require.Equal(t, store, vms)
 	require.False(t, vms[0].IsSandbox())
 	require.True(t, vms[1].IsSandbox())
 	require.True(t, vms[1].Running())
@@ -65,4 +82,42 @@ func TestParseListEmpty(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Empty(t, vms)
+}
+
+func TestScreen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		names []string
+		want  sandbox.Screening
+	}{
+		{name: "sandbox", names: []string{runSB}, want: sandbox.Screening{Kept: []string{runSB}}},
+		{name: "stopped sandbox", names: []string{keepSB}, want: sandbox.Screening{Kept: []string{keepSB}}},
+		{name: "other vm", names: []string{builder}, want: sandbox.Screening{Refused: []string{builder}}},
+		{name: "unknown is left to container", names: []string{unknown}, want: sandbox.Screening{Kept: []string{unknown}}},
+		{
+			name:  "mixed keeps the order",
+			names: []string{builder, runSB, unknown},
+			want:  sandbox.Screening{Kept: []string{runSB, unknown}, Refused: []string{builder}},
+		},
+		{name: "wrong label value", names: []string{other}, want: sandbox.Screening{Refused: []string{other}}},
+	}
+
+	vms := slices.Concat(store, []sandbox.VM{{ID: other, Labels: map[string]string{"cove": other}, State: running}})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, sandbox.Screen(vms, tt.names))
+		})
+	}
+}
+
+func TestRunning(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, []string{runSB}, sandbox.Running(store))
+	require.Empty(t, sandbox.Running(store[:1]))
 }

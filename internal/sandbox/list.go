@@ -75,3 +75,42 @@ func parseList(data []byte) ([]VM, error) {
 	}
 	return vms, nil
 }
+
+// Screening splits the targets of a verb between those cove may act on and those it refuses.
+type Screening struct {
+	// Kept are the targets to hand to container, in the order given.
+	Kept []string
+	// Refused are the targets that name a VM of the store that is not a sandbox of cove.
+	Refused []string
+}
+
+// Screen sorts names into a Screening: cove never touches a VM it did not launch. A name that
+// matches no VM is kept: container resolves IDs itself and reports the unknown ones, so cove does
+// not second-guess it.
+func Screen(vms []VM, names []string) Screening {
+	known := make(map[string]VM, len(vms))
+	for _, vm := range vms {
+		known[vm.ID] = vm
+	}
+	var s Screening
+	for _, name := range names {
+		if vm, ok := known[name]; ok && !vm.IsSandbox() {
+			s.Refused = append(s.Refused, name)
+			continue
+		}
+		s.Kept = append(s.Kept, name)
+	}
+	return s
+}
+
+// Running returns the IDs of the sandboxes of cove that run: what "all" means for cove, since the
+// --all of container would reach the other VMs of the store.
+func Running(vms []VM) []string {
+	var ids []string
+	for _, vm := range vms {
+		if vm.IsSandbox() && vm.Running() {
+			ids = append(ids, vm.ID)
+		}
+	}
+	return ids
+}
