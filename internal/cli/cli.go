@@ -46,6 +46,10 @@ func (a *App) Run(args []string) int {
 	case "help":
 		printUsage(a.Stdout, fs)
 		return 0
+	// ls and ps are the names docker and container gave the same verb; both reach list, whose
+	// help and errors carry the canonical name.
+	case "list", "ls", "ps":
+		return listCommand(a, fs.Args()[1:])
 	case "run":
 		return runCommand(a, fs.Args()[1:])
 	case "stop":
@@ -63,6 +67,7 @@ func printUsage(w io.Writer, fs *flag.FlagSet) {
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Commands:")
 	_, _ = fmt.Fprintln(w, "  help    Show help")
+	_, _ = fmt.Fprintln(w, "  list    List sandboxes (aliases: ls, ps)")
 	_, _ = fmt.Fprintln(w, "  run     Create a sandbox")
 	_, _ = fmt.Fprintln(w, "  stop    Stop sandboxes")
 	fs.SetOutput(w)

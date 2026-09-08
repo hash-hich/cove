@@ -10,12 +10,27 @@ import (
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
-// demo is the sandbox the tests name.
-const demo = "demo"
+const (
+	// demo is the sandbox the tests name.
+	demo = "demo"
+	// unknownFlag is what flag reports for a flag no command defines.
+	unknownFlag = "not defined: -bogus"
+	// listUsage heads the help of list, under which its aliases answer too.
+	listUsage = "Usage: cove list"
+	// longForms names the case where every flag is given in its long form.
+	longForms = "long forms"
+	// table is the default output format of list.
+	table = "table"
+)
 
 // runArgs prefixes args with the run command.
 func runArgs(args ...string) []string {
 	return append([]string{"run"}, args...)
+}
+
+// listArgs prefixes args with the list command.
+func listArgs(args ...string) []string {
+	return append([]string{"list"}, args...)
 }
 
 // stopArgs prefixes args with the stop command.
@@ -34,7 +49,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "no arguments", args: nil},
 		{name: "unknown command", args: []string{"bogus"}},
 		{name: "unknown flag", args: []string{"--bogus"}},
-		{name: "run unknown flag", args: runArgs("--bogus"), wantStderr: "not defined: -bogus"},
+		{name: "run unknown flag", args: runArgs("--bogus"), wantStderr: unknownFlag},
 		{name: "run docker session flags", args: runArgs("-it"), wantStderr: "not defined: -it"},
 		{name: "run rm and keep", args: runArgs("--rm", "--keep"), wantStderr: "mutually exclusive"},
 		{name: "run bad cpus", args: runArgs("--cpus", "x"), wantStderr: "invalid value"},
@@ -42,10 +57,14 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "run command", args: runArgs("bash"), wantStderr: "takes no command"},
 		{name: "stop no target", args: stopArgs(), wantStderr: "requires at least 1 argument"},
 		{name: "stop all with target", args: stopArgs("--all", demo), wantStderr: "takes no target"},
-		{name: "stop unknown flag", args: stopArgs("--bogus", demo), wantStderr: "not defined: -bogus"},
+		{name: "stop unknown flag", args: stopArgs("--bogus", demo), wantStderr: unknownFlag},
 		{name: "stop podman ignore", args: stopArgs("-i", demo), wantStderr: "not defined: -i"},
 		{name: "stop bad time", args: stopArgs("-t", "x", demo), wantStderr: "invalid value"},
 		{name: "stop negative time", args: stopArgs("-t", "-1", demo), wantStderr: "must be positive"},
+		{name: "list unknown flag", args: listArgs("--bogus"), wantStderr: unknownFlag},
+		{name: "list unknown format", args: listArgs("--format", "yaml"), wantStderr: "must be table or json"},
+		{name: "list docker filter", args: listArgs("--filter", "label=cove"), wantStderr: "not defined: -filter"},
+		{name: "list target", args: listArgs(demo), wantStderr: "takes no argument"},
 	}
 
 	for _, tt := range tests {
@@ -76,6 +95,9 @@ func TestRunHelp(t *testing.T) {
 		{name: "command", args: []string{"help"}, want: "Usage: cove <command>"},
 		{name: "run flag", args: runArgs("-h"), want: "Usage: cove run"},
 		{name: "stop flag", args: stopArgs("-h"), want: "Usage: cove stop"},
+		{name: "list flag", args: listArgs("-h"), want: listUsage},
+		{name: "ls alias", args: []string{"ls", "-h"}, want: listUsage},
+		{name: "ps alias", args: []string{"ps", "-h"}, want: listUsage},
 	}
 
 	for _, tt := range tests {
@@ -109,7 +131,7 @@ func TestParseRun(t *testing.T) {
 			want: sandbox.Spec{Name: demo, Keep: true, CPUs: 2, Memory: "4G", Env: []string{"FOO=bar", "TERM"}},
 		},
 		{
-			name: "long forms",
+			name: longForms,
 			args: []string{"--memory=4G", "--env=BAR=baz"},
 			want: sandbox.Spec{Memory: "4G", Env: []string{"BAR=baz"}},
 		},
@@ -146,7 +168,7 @@ func TestParseStop(t *testing.T) {
 			want: sandbox.StopSpec{Targets: []string{demo}, Signal: "SIGKILL", Timeout: new(30)},
 		},
 		{
-			name: "long forms",
+			name: longForms,
 			args: []string{"--signal=SIGINT", "--time=0", demo},
 			want: sandbox.StopSpec{Targets: []string{demo}, Signal: "SIGINT", Timeout: new(0)},
 		},
@@ -162,6 +184,37 @@ func TestParseStop(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.want, spec)
 			require.Equal(t, tt.wantAll, all)
+		})
+	}
+}
+
+func TestParseList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want cli.ListOptions
+	}{
+		{name: "no flags", args: nil, want: cli.ListOptions{Format: table}},
+		{name: "all", args: []string{"-a"}, want: cli.ListOptions{All: true, Format: table}},
+		{name: "quiet", args: []string{"-q"}, want: cli.ListOptions{Quiet: true, Format: table}},
+		{
+			name: longForms,
+			args: []string{"--all", "--quiet", "--format=json"},
+			want: cli.ListOptions{All: true, Quiet: true, Format: "json"},
+		},
+		{name: "table is explicit too", args: []string{"--format", table}, want: cli.ListOptions{Format: table}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts, err := cli.ParseList(tt.args)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, opts)
 		})
 	}
 }
