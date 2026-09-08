@@ -1,4 +1,4 @@
-# Unsupervised coding-agent sandbox with empty-room isolation.
+# Cove - Sandbox for Unsupervised Coding-agent
 
 Run a coding agent on a repository **without approving each step**,
 then get the result back as a merge request to review — while treating the agent
