@@ -6,10 +6,17 @@ import "strconv"
 // Image is the sandbox image, built from images/sandbox and stored locally only (D9).
 const Image = "cove-sandbox:local"
 
-// Label marks the VMs cove launched, so that cove can tell them apart from the other VMs of the
-// host (Apple's builder VM carries com.apple.container.plugin=builder the same way). The key
-// carries a role rather than "true" so that a future receiver or broker VM can use another value.
-const Label = "cove=sandbox"
+// LabelKey and LabelValue mark the VMs cove launched, so that cove can tell them apart from the
+// other VMs of the host (Apple's builder VM carries com.apple.container.plugin=builder the same
+// way). The key carries a role rather than "true" so that a future receiver or broker VM can use
+// another value.
+const (
+	LabelKey   = "cove"
+	LabelValue = "sandbox"
+)
+
+// Label is the label as container run takes it.
+const Label = LabelKey + "=" + LabelValue
 
 // Spec describes a sandbox to launch: the options the user may set on top of the fixed image and
 // process.
