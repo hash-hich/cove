@@ -103,14 +103,26 @@ func Screen(vms []VM, names []string) Screening {
 	return s
 }
 
+// Sandboxes returns the VMs of vms that cove launched, in the order given: the ones that run,
+// and the stopped ones too when all. The store is shared with VMs that are not cove's, and those
+// are never its business.
+func Sandboxes(vms []VM, all bool) []VM {
+	kept := make([]VM, 0, len(vms))
+	for _, vm := range vms {
+		if vm.IsSandbox() && (all || vm.Running()) {
+			kept = append(kept, vm)
+		}
+	}
+	return kept
+}
+
 // Running returns the IDs of the sandboxes of cove that run: what "all" means for cove, since the
 // --all of container would reach the other VMs of the store.
 func Running(vms []VM) []string {
-	var ids []string
-	for _, vm := range vms {
-		if vm.IsSandbox() && vm.Running() {
-			ids = append(ids, vm.ID)
-		}
+	sandboxes := Sandboxes(vms, false)
+	ids := make([]string, 0, len(sandboxes))
+	for _, vm := range sandboxes {
+		ids = append(ids, vm.ID)
 	}
 	return ids
 }

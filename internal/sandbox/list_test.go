@@ -121,3 +121,31 @@ func TestRunning(t *testing.T) {
 	require.Equal(t, []string{runSB}, sandbox.Running(store))
 	require.Empty(t, sandbox.Running(store[:1]))
 }
+
+func TestSandboxes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		all  bool
+		want []sandbox.VM
+	}{
+		{name: "running only", want: []sandbox.VM{store[1]}},
+		{name: "all", all: true, want: []sandbox.VM{store[1], store[2]}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, sandbox.Sandboxes(store, tt.all))
+		})
+	}
+}
+
+func TestSandboxesEmpty(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, sandbox.Sandboxes(store[:1], true))
+	require.Empty(t, sandbox.Sandboxes(nil, true))
+}
