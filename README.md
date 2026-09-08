@@ -54,6 +54,27 @@ project that claims more than it holds is a liability, so this README won't.
 Go · Apple `container` (micro-VM, Apple Silicon) · GitLab + Claude Code today,
 forge- and model-agnostic later.
 
+## Try it
+
+Requires macOS 26 on Apple Silicon, with Apple `container` installed and its
+system service started.
+
+```bash
+container build --platform linux/arm64 -t cove-sandbox:local images/sandbox
+go build -o bin/cove ./cmd/cove
+bin/cove run --name demo          # a micro-VM, kept alive until stopped
+container exec -it demo claude    # until cove has its own verb to talk to the agent
+container stop demo               # same
+```
+
+`cove run` creates the sandbox and nothing else; talking to the agent and
+stopping the VM are separate verbs. It takes the flags of `docker run` that this
+role justifies (`--name`, `--rm`, `--keep`, `--cpus`, `-m`, `-e`) and nothing
+else: cove builds the argument array itself, so a mount, a user, a working
+directory, a network option, the SSH agent or a command cannot even be asked
+for. Exit code: 0 once the VM runs; 2 on a usage error; 125 when cove could not
+launch it.
+
 ## Design notes
 
 The scoping documents — threat model, adversary model, surfaces, requirements —

@@ -40,17 +40,21 @@ sinon fais ta meilleure tentative et documente tes hypothèses » vit dans le
 `CLAUDE.md`, pas dans le harnais.
 
 **Le fil de commentaires de la MR *est* la session, rendue asynchrone.** Question
-de l'agent → commentaire ; réponse humaine → commentaire, qui **déclenche un run
-repris**. Il n'y a donc pas de verbe « envoyer une instruction » distinct : c'est
-`run --resume <session>`, un tour de parole de plus. Le CLI n'a que `run`
-(éventuellement en reprise) et `stop`, un coupe-circuit asymétrique pour tuer un
-run emballé (R4/R5). En local on tape le `run --resume` ; en mode forge, l'amont
-de D8 traduit « réponse au commentaire » en `run --resume` — le wrapper reste
-sans surface entrante.
+de l'agent → commentaire ; réponse humaine → commentaire, qui **déclenche un tour
+de plus** de l'agent. Trois verbes aux rôles disjoints. `run` crée la sandbox, la
+VM et l'agent dedans, et rien d'autre. Un **verbe d'interaction** envoie un tour à
+l'agent de cette sandbox, autant de fois qu'on veut, en mode piloté et borné
+(autonome) comme en mode conversationnel ; c'est lui qui porte la reprise d'une
+session, jamais `run`. `stop` arrête la VM, `kill` la tue : le coupe-circuit
+asymétrique pour un run emballé (R4/R5). Autour, les verbes de docker que les
+développeurs connaissent, `ps`, `rm`, `logs`. En local on tape le verbe
+d'interaction ; en mode forge, l'amont de D8 traduit « réponse au commentaire »
+en ce même verbe, et le wrapper reste sans surface entrante.
 
-**La reprise impose de persister l'état de session hors de la boîte.** La boîte
-est détruite à chaque run (R5) ; la transcription dont `--resume` a besoin doit
-donc survivre **côté hôte**. Résidu *voulu*, pas entorse à R5. Mais c'est une
+**Reprendre après `stop` impose de persister l'état de session hors de la
+boîte.** Tant que la VM tourne, la session vit dedans et le verbe d'interaction
+l'enchaîne ; une fois la VM arrêtée (R5), la transcription qu'une reprise exige
+doit survivre **côté hôte**. Résidu *voulu*, pas entorse à R5. Mais c'est une
 instance de **S22** (état partagé entre runs) : le magasin de sessions doit être
 **cloisonné par session** — l'état d'une session ne fuit jamais dans une autre —
 au même titre que le broker interdit tout état exploitable entre runs.

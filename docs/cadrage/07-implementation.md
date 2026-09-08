@@ -57,7 +57,45 @@ JSON de `list` et `inspect`. Cove est une interface entre le moteur de VM
 (`container` aujourd'hui, Firecracker demain) et le harnais : un CLI sans
 démon, à la manière de terraform. Une VM survit à la fin de cove comme à celle
 du CLI `container` (service launchd propre, signaux au CLI non transmis) ; sa
-destruction est un verbe explicite, jamais un effet de bord. 
+destruction est un verbe explicite, jamais un effet de bord. Trois rôles (§12) :
+`run` crée la sandbox et rend la main dès que la VM tourne, le verbe
+d'interaction envoie un tour à l'agent (un processus Claude par tour, lancé par
+`exec`, repris par son identifiant de session), `stop` arrête la VM.
+
+*Processus 1 de la VM.* Comme aucun Claude n'occupe la place entre deux tours,
+la VM a besoin d'un processus 1 qui attend de `run` à `stop`, et Linux traite ce
+processus à part : un signal à comportement par défaut ne lui est pas délivré,
+et les orphelins des autres processus lui sont rattachés. Mesuré sur 1.3.1 avec
+`sleep` seul en processus 1 : `stop` envoie SIGTERM dans le vide et tue après
+son délai (5 s, code 137), et un processus laissé par un `exec` reste zombie
+(`ps` : état `Z`). Avec `--init`, `container` place devant la commande son
+propre init (`/.cz-init`, la commande `init` de vminitd du projet Containerization,
+sous l'utilisateur de l'image) : il bloque tous les signaux et les relaie à son
+enfant par `sigtimedwait`, moissonne par `waitpid`, et sort avec le code de
+l'enfant. Mesuré : `stop` sans délai, aucun zombie, code de sortie rendu
+(`sh -c 'exit 7'` : 7). L'enfant est `sleep infinity`, bouche-trou : GNU `sleep`
+accepte `infinity` parce qu'il lit son argument par `strtod`, ce que la base
+Debian (D9) garantit et que BusyBox ou BSD ne garantissent pas. vminitd a aussi
+une commande `pause` (processus 1 qui attend et moissonne, comme celui de
+Kubernetes) mais le CLI ne l'expose pas. Ce bouche-trou est destiné à être
+remplacé par un processus cove propre à la VM, au même endroit de l'argv : c'est
+là que vivent les actions qui exigent un processus résident, la durée maximale
+de la VM (R4, aucun drapeau côté `container`), les règles netfilter de S32
+posées en root avant de descendre en uid 1000, le test de fraîcheur de P4, et la
+recopie du stdio de Claude vers `logs`, qui ne voit que le processus 1. Cove
+reste ainsi sans démon : le résident vit dans la boîte, tout ce qu'il renvoie
+est hostile (R6), il ne détient aucun secret (R2).
+
+*Drapeaux.* Ceux de `docker run` que le rôle de `run` justifie (`--name`,
+`--rm`, `--keep`, `--cpus`, `-m`, `-e`), passés tels quels, et rien d'autre :
+cove construit le tableau d'arguments lui-même, donc ce qui déferait R1, R2 ou
+D9 (`-v`, `--mount`, `-u`, `-w`, `--ssh`, `--env-file`, réseau, capabilities,
+`--label`) et ce que le rôle exclut (`-i`, `-t`, une commande) n'existent pas
+plutôt que d'être interdits (P2) ; ce tableau est testé en Go (`internal/sandbox`).
+`-d` est posé par cove. Observé : `container run -d` écrit le nom de la VM sur
+stdout (un UUID sans `--name`) et sa progression sur stderr ; `--memory 512m` en
+minuscule est accepté ; `-e` est un passe-plat total pour l'instant. Chaque VM
+porte le label `cove=sandbox`, par lequel cove reconnaît les siennes.
 
 **Réseau (D10)** :
 la VM reçoit une adresse non stable du réseau NAT `default`
