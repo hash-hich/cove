@@ -1,10 +1,12 @@
-package main
+package cli_test
 
 import (
 	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"gitlab.com/hich-hich/cove/internal/cli"
 )
 
 func TestRunUsageErrors(t *testing.T) {
@@ -24,9 +26,10 @@ func TestRunUsageErrors(t *testing.T) {
 			t.Parallel()
 
 			var stdout, stderr bytes.Buffer
-			code := run(tt.args, &stdout, &stderr)
+			app := &cli.App{Stdout: &stdout, Stderr: &stderr}
+			code := app.Run(tt.args)
 
-			require.Equal(t, exitUsage, code)
+			require.Equal(t, cli.ExitUsage, code)
 			require.Empty(t, stdout.String())
 			require.Contains(t, stderr.String(), "Usage")
 		})
@@ -49,7 +52,8 @@ func TestRunHelp(t *testing.T) {
 			t.Parallel()
 
 			var stdout, stderr bytes.Buffer
-			code := run(tt.args, &stdout, &stderr)
+			app := &cli.App{Stdout: &stdout, Stderr: &stderr}
+			code := app.Run(tt.args)
 
 			require.Equal(t, 0, code)
 			require.Contains(t, stdout.String(), "Usage")
