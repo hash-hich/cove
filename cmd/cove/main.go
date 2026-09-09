@@ -8,6 +8,6 @@ import (
 )
 
 func main() {
-	app := &cli.App{Stdout: os.Stdout, Stderr: os.Stderr}
+	app := &cli.App{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 	os.Exit(app.Run(os.Args[1:]))
 }

@@ -13,6 +13,8 @@ const ExitUsage = 2
 
 // App holds the streams of a cove invocation.
 type App struct {
+	// Stdin is only read by an attached send, which hands it to the terminal of the agent.
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 }
@@ -52,6 +54,8 @@ func (a *App) Run(args []string) int {
 		return listCommand(a, fs.Args()[1:])
 	case "run":
 		return runCommand(a, fs.Args()[1:])
+	case "send":
+		return sendCommand(a, fs.Args()[1:])
 	case "stop":
 		return stopCommand(a, fs.Args()[1:])
 	default:
@@ -69,6 +73,7 @@ func printUsage(w io.Writer, fs *flag.FlagSet) {
 	_, _ = fmt.Fprintln(w, "  help    Show help")
 	_, _ = fmt.Fprintln(w, "  list    List sandboxes (aliases: ls, ps)")
 	_, _ = fmt.Fprintln(w, "  run     Create a sandbox")
+	_, _ = fmt.Fprintln(w, "  send    Talk to the agent of a sandbox")
 	_, _ = fmt.Fprintln(w, "  stop    Stop sandboxes")
 	fs.SetOutput(w)
 	fs.PrintDefaults()

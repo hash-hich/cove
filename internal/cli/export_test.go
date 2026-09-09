@@ -8,3 +8,6 @@ var ParseList = parseList
 
 // ParseStop exposes parseStop to the tests of the package.
 var ParseStop = parseStop
+
+// ParseSend exposes parseSend to the tests of the package.
+var ParseSend = parseSend

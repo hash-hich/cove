@@ -21,6 +21,8 @@ const (
 	longForms = "long forms"
 	// table is the default output format of list.
 	table = "table"
+	// review is the display name the send tests give a thread.
+	review = "review"
 )
 
 // runArgs prefixes args with the run command.
@@ -36,6 +38,11 @@ func listArgs(args ...string) []string {
 // stopArgs prefixes args with the stop command.
 func stopArgs(args ...string) []string {
 	return append([]string{"stop"}, args...)
+}
+
+// sendArgs prefixes args with the send command.
+func sendArgs(args ...string) []string {
+	return append([]string{"send"}, args...)
 }
 
 func TestRunUsageErrors(t *testing.T) {
@@ -65,6 +72,12 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "list unknown format", args: listArgs("--format", "yaml"), wantStderr: "must be table or json"},
 		{name: "list docker filter", args: listArgs("--filter", "label=cove"), wantStderr: "not defined: -filter"},
 		{name: "list target", args: listArgs(demo), wantStderr: "takes no argument"},
+		{name: "send no target", args: sendArgs(), wantStderr: "requires at least 1 argument"},
+		{name: "send two prompts", args: sendArgs(demo, "a", "b"), wantStderr: "takes one prompt"},
+		{name: "send empty prompt", args: sendArgs(demo, ""), wantStderr: "the prompt is empty"},
+		{name: "send empty resume", args: sendArgs("-r", "", demo), wantStderr: "--resume requires a thread"},
+		{name: "send unknown flag", args: sendArgs("--bogus", demo), wantStderr: unknownFlag},
+		{name: "send docker detach", args: sendArgs("-d", demo), wantStderr: "not defined: -d"},
 	}
 
 	for _, tt := range tests {
@@ -95,6 +108,7 @@ func TestRunHelp(t *testing.T) {
 		{name: "command", args: []string{"help"}, want: "Usage: cove <command>"},
 		{name: "run flag", args: runArgs("-h"), want: "Usage: cove run"},
 		{name: "stop flag", args: stopArgs("-h"), want: "Usage: cove stop"},
+		{name: "send flag", args: sendArgs("-h"), want: "Usage: cove send"},
 		{name: "list flag", args: listArgs("-h"), want: listUsage},
 		{name: "ls alias", args: []string{"ls", "-h"}, want: listUsage},
 		{name: "ps alias", args: []string{"ps", "-h"}, want: listUsage},
@@ -184,6 +198,52 @@ func TestParseStop(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.want, spec)
 			require.Equal(t, tt.wantAll, all)
+		})
+	}
+}
+
+func TestParseSend(t *testing.T) {
+	t.Parallel()
+
+	const thread = "0b7f1a3c-9e42-4d51-8a6b-2f0c5d7e1934"
+
+	tests := []struct {
+		name string
+		args []string
+		want sandbox.SendSpec
+	}{
+		{name: "attached", args: []string{demo}, want: sandbox.SendSpec{Target: demo}},
+		{
+			name: "driven",
+			args: []string{demo, "fix the build"},
+			want: sandbox.SendSpec{Target: demo, Prompt: "fix the build"},
+		},
+		{
+			name: "resume",
+			args: []string{"-r", thread, demo, "go on"},
+			want: sandbox.SendSpec{Target: demo, Prompt: "go on", Thread: thread, Resume: true},
+		},
+		{
+			name: longForms,
+			args: []string{"--resume=" + review, "--name=ignored", demo},
+			want: sandbox.SendSpec{Target: demo, Thread: review, Resume: true, Name: "ignored"},
+		},
+		{name: "name", args: []string{"-n", review, demo}, want: sandbox.SendSpec{Target: demo, Name: review}},
+		{
+			name: "a prompt is not parsed for flags",
+			args: []string{demo, "--help me"},
+			want: sandbox.SendSpec{Target: demo, Prompt: "--help me"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			spec, err := cli.ParseSend(tt.args)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, spec)
 		})
 	}
 }
