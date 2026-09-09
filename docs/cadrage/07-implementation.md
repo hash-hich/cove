@@ -124,7 +124,7 @@ le JSON sur stdout sans le parser ni promettre son schéma (l'inverse de `list`,
 qui rend des objets de cove : unifier la sortie de tous les agents serait un
 contrat intenable). Pas de mode texte : ce serait le seul chemin à exiger un
 filtre. Cove possède l'argv de l'agent : le prompt positionnel, `--session-id`,
-`-n`, `--resume`, et rien d'autre ; pas de `--` qui passerait l'argv tel quel
+`-n`, `--resume`, `--continue`, et rien d'autre ; pas de `--` qui passerait l'argv tel quel
 comme le fait `sbx`, parce que le contrat de sortie tient à des drapeaux que
 l'utilisateur écraserait (P2). Identité du fil : cove tire un UUID v4 et le
 pose en `--session-id`, donc aucun octet lu dans la boîte ne devient un
@@ -154,8 +154,10 @@ persiste dans la transcription (enregistrement `custom-title`), pas seulement
 dans le registre des sessions vivantes ; deux fils de même nom font échouer
 `--resume <nom>` en listant les UUID candidats au lieu d'en choisir un ; un
 tour qui échoue laisse stdout vide ou strictement JSON, écrit du texte sur
-stderr et sort 1 ; `--continue` ignore les sessions créées en print mode, il ne
-peut donc pas porter un fil piloté. Codes : celui de `container exec`, qui
+stderr et sort 1 ; `--continue` ignore les sessions créées en print mode et
+repart à neuf sans le dire, donc cove ne le porte qu'en régime attaché (`-c`,
+seule reprise dont l'identité n'est pas la sienne) et le refuse avec un prompt
+en erreur d'usage. Codes : celui de `container exec`, qui
 porte celui de `claude`, 1 si la cible est refusée, 2 en erreur d'usage, 125
 quand cove n'a pas pu exécuter `container`.
 

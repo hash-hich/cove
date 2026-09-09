@@ -94,8 +94,10 @@ on a usage error; 125 when cove could not run `container`.
 `container exec`. Without a prompt it attaches a terminal to the agent's REPL;
 with one it drives a single turn and copies the JSON of `claude` to stdout,
 unparsed and unfiltered. Each send opens a new thread unless `-r` resumes one,
-by UUID or by the display name `-n` gave it; a sandbox carries as many threads
-as it is sent, sharing its files, and cove arbitrates nothing between them. The
+by UUID or by the display name `-n` gave it, or `-c` attaches to the last one
+(attached only: `claude` keeps no record of driven threads for it); a sandbox
+carries as many threads as it is sent, sharing its files, and cove arbitrates
+nothing between them. The
 UUID is cove's, drawn before the agent says anything: it is the `session_id` of
 the JSON, and is printed on stderr when a terminal is attached. Only these flags
 and the prompt reach `claude`: cove builds the argument array itself. Like
