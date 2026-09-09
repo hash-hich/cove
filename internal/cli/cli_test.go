@@ -92,8 +92,15 @@ func TestRunUsageErrors(t *testing.T) {
 
 			require.Equal(t, cli.ExitUsage, code)
 			require.Empty(t, stdout.String())
-			require.Contains(t, stderr.String(), "Usage")
 			require.Contains(t, stderr.String(), tt.wantStderr)
+			// A bare cove gets the usage. An error gets the way to it: the usage would drown the
+			// error, which is what the caller must read.
+			if len(tt.args) == 0 {
+				require.Contains(t, stderr.String(), "Usage: cove")
+			} else {
+				require.Contains(t, stderr.String(), "--help'.")
+				require.NotContains(t, stderr.String(), "Usage:")
+			}
 		})
 	}
 }

@@ -21,8 +21,9 @@ type App struct {
 
 // Run parses args and dispatches to the requested command. It returns the process exit code.
 //
-// Help that was asked for goes to stdout with exit code 0; usage shown after an error goes to
-// stderr with a non-zero code, following the GNU convention.
+// Help that was asked for goes to stdout with exit code 0. An error goes to stderr with a non-zero
+// code, followed by the way to the help rather than the help itself, as docker does: the usage
+// would drown the error, which is what the caller must read. Only a bare cove gets the usage.
 func (a *App) Run(args []string) int {
 	fs := flag.NewFlagSet("cove", flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
@@ -35,7 +36,7 @@ func (a *App) Run(args []string) int {
 			printUsage(a.Stdout, fs)
 			return 0
 		}
-		printUsage(a.Stderr, fs)
+		printHelpHint(a.Stderr, "")
 		return ExitUsage
 	}
 
@@ -60,9 +61,19 @@ func (a *App) Run(args []string) int {
 		return stopCommand(a, fs.Args()[1:])
 	default:
 		_, _ = fmt.Fprintf(a.Stderr, "unknown command %q\n", cmd)
-		printUsage(a.Stderr, fs)
+		printHelpHint(a.Stderr, "")
 		return ExitUsage
 	}
+}
+
+// printHelpHint writes to w the line that follows a usage error: where the help is, for cove
+// itself when command is empty, for that command otherwise.
+func printHelpHint(w io.Writer, command string) {
+	name := "cove"
+	if command != "" {
+		name += " " + command
+	}
+	_, _ = fmt.Fprintf(w, "See '%s --help'.\n", name)
 }
 
 // printUsage writes the usage text and the flag defaults of fs to w.

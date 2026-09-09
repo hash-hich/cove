@@ -23,7 +23,7 @@ func stopCommand(a *App, args []string) int {
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove stop: %v\n", err)
-		printStopUsage(a.Stderr)
+		printHelpHint(a.Stderr, "stop")
 		return ExitUsage
 	}
 

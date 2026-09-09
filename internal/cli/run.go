@@ -34,7 +34,7 @@ func runCommand(a *App, args []string) int {
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove run: %v\n", err)
-		printRunUsage(a.Stderr)
+		printHelpHint(a.Stderr, "run")
 		return ExitUsage
 	}
 
