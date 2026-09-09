@@ -20,9 +20,10 @@ alone.
 ## Why there is no verification script
 
 The guarantees the image gives (R1, R2) are structural (P2): the Dockerfile
-copies nothing from the host, sets a non-root user, creates an empty home and
-carries no credential. Nothing checks that better than reading its eighty
-lines, and the build already fails when the pinned checksum does not match.
+copies nothing from the host, sets a non-root user, puts nothing in the home
+but Claude Code's first launch state and carries no credential. Nothing
+checks that better than reading its hundred lines, and the build already
+fails when the pinned checksum does not match.
 Claude Code itself refuses to start in bypass mode as root, so the user
 choice is enforced at every run without a script. A verification script was
 written for this issue and removed on purpose: every check it ran tested the
@@ -44,7 +45,24 @@ container run --rm cove-sandbox:local claude --version   # the pinned version
 container run --rm cove-sandbox:local id -u              # 1000, not 0
 container run --rm cove-sandbox:local git --version
 container run --rm cove-sandbox:local env                # PATH, HOME, DISABLE_UPDATES only
+container run --rm cove-sandbox:local ls -A /home/agent  # .claude.json only
+container run --rm cove-sandbox:local stat -c '%U %a' /home/agent/.claude.json   # agent 600
 ```
+
+Then the first launch, which no static check covers because the keys of
+`claude.json` are undocumented (decision 10). On a fresh sandbox created by
+cove with a credential passed at launch (a stopgap until the broker, D1, and
+not the interface: it is deliberately absent from the usage of `cove run`):
+
+```bash
+cove run --name t9 -e CLAUDE_CODE_OAUTH_TOKEN=...
+cove send t9                 # the prompt, with no theme, login or trust dialog before it
+cove send t9 "Answer ok"     # JSON carrying a model answer, no setup or login error
+cove stop t9
+```
+
+A dialog showing up here means the pinned version reads other keys than the
+ones `claude.json` carries.
 
 ## What the image contains
 
@@ -54,7 +72,7 @@ container run --rm cove-sandbox:local env                # PATH, HOME, DISABLE_U
 | Claude Code | native binary, exact version and SHA256 pinned in the Dockerfile, at `/usr/local/bin/claude` |
 | Packages added | `git`, `ca-certificates`, and the tools the model reaches for: `curl`, `jq`, `patch`, `procps`, `python3` (no recommends, apt lists removed) |
 | User | `agent`, uid 1000, gid 1000, shell `/bin/bash` |
-| `$HOME` | `/home/agent`, created empty |
+| `$HOME` | `/home/agent`, holding only `.claude.json`, the first launch state of Claude Code |
 | Working directory | `/work`, owned by `agent`, where the repository will live |
 | Environment | `HOME=/home/agent`, `DISABLE_UPDATES=1` |
 | Entrypoint | none; the default command is the base image's `bash`, cove passes the command at run time |
@@ -94,16 +112,17 @@ rejected.
 4. **User and paths.** A non-root user because Claude Code refuses
    `--dangerously-skip-permissions` as root. Name `agent`, uid and gid 1000 so
    that files handed to the VM by the host side map to a predictable id.
-   `$HOME` is `/home/agent` and is created empty (`useradd --no-create-home`,
+   `$HOME` is `/home/agent` and is created by hand (`useradd --no-create-home`,
    then `install -d`): no `.bashrc`, no `.profile`, nothing that sources
    anything. The repository lives at `/work`, outside `$HOME`, so that `$HOME`
-   only ever contains what Claude Code writes during the run. `HOME` is set
-   explicitly in the image rather than left to the guest init.
+   only ever contains what the image puts there (decision 10) and what Claude
+   Code writes during the run. `HOME` is set explicitly in the image rather
+   than left to the guest init.
 5. **Deliberately absent.** No credentials, no host path, no shell profile,
-   no apt lists, no package cache, no `~/.claude`, `~/.ssh`, `~/.aws`, no
-   `/Users`. R1 holds by absence (P2): these paths do not exist, they are not
-   merely forbidden (`ls` says "No such file or directory", not "Permission
-   denied"). No `ENTRYPOINT`, so a derived
+   no apt lists, no package cache, no `~/.claude` directory, `~/.ssh`,
+   `~/.aws`, no `/Users`. R1 holds by absence (P2): these paths do not exist,
+   they are not merely forbidden (`ls` says "No such file or directory", not
+   "Permission denied"). No `ENTRYPOINT`, so a derived
    image never has to undo one; the default command is the base image's
    `bash`. No telemetry related variables: what the guest may reach on the
    network is the networking issue's decision.
@@ -114,10 +133,9 @@ rejected.
    the `org.opencontainers.image.version` label.
 7. **Extension point (not implemented).** A project image starts with
    `FROM cove-sandbox:local`, switches to `USER root` to add its toolchain,
-   switches back to `USER agent`, keeps `/home/agent` empty and `/work` as the
-   working directory, and passes the acceptance commands above. Go for cove
-   itself and
-   Node for a JavaScript repository are the first candidates.
+   switches back to `USER agent`, adds nothing to `/home/agent`, keeps `/work`
+   as the working directory, and passes the acceptance commands above. Go for
+   cove itself and Node for a JavaScript repository are the first candidates.
 8. **Common tools in the base.** Besides `git`, the base ships `curl`, `jq`,
    `patch`, `procps` and `python3`. They are not needed to run Claude Code;
    they are what the model reaches for on its own, measured on the owner's
@@ -134,6 +152,29 @@ rejected.
    a binary under `/work`), with network access, and it disappears with the
    VM. The image that runs is thus always the one the Dockerfile describes,
    while the agent keeps the autonomy to do and not only to see.
+10. **First launch state.** On its first launch in an empty home, Claude Code
+    asks for a theme, a login and whether to trust `/work`, and remembers the
+    answers in `~/.claude.json`. A cove sandbox must answer its first turn
+    instead, so the image copies `claude.json` from this directory to
+    `/home/agent/.claude.json` with the two keys that carry those answers,
+    measured on the pinned version: `hasCompletedOnboarding` and
+    `projects["/work"].hasTrustDialogAccepted`. Everything else the file holds
+    after a real launch is cache, telemetry or version bookkeeping that Claude
+    Code rewrites on its own; the pinned version is not repeated in it so that
+    the Dockerfile stays the only place where it is set. The login is not
+    covered: it is the credential's job (D1), and the approval Claude Code
+    asks for an API key is stored keyed by the key itself, so it cannot be
+    preset. The state lives in the image rather than being written by cove at
+    `run`: it depends on the Claude Code version pinned here, not on the cove
+    version, and a Go code path that writes into the VM could not be tested
+    without faking `container`. These keys are undocumented, which is why the
+    acceptance replays the first launch by hand at every bump. Measured on
+    2.1.236 without any credential: the attached prompt still shows, with
+    "Not logged in" in its status line, and a piloted turn returns a JSON
+    result with `is_error` and exit code 1, so the missing login never turns
+    into a dialog. Rejected:
+    `CLAUDE_CONFIG_DIR` to keep `$HOME` literally empty, which moves the whole
+    state elsewhere for the same result and adds a variable to the image.
 
 ## Bumping the pins
 
@@ -161,7 +202,10 @@ rejected.
 3. Update `CLAUDE_CODE_VERSION` and `CLAUDE_CODE_SHA256` in the Dockerfile.
 4. For the base, take the current index digest of `debian:trixie-slim` on
    Docker Hub and update `DEBIAN_DIGEST`.
-5. Rebuild and run the acceptance commands.
+5. Rebuild and run the acceptance commands, first launch included. A dialog
+   showing up means the new version reads other keys than the ones in
+   `claude.json`: measure what it writes after a real first launch, and
+   update `claude.json` in the same commit as the bump.
 
 ## Limitations
 
@@ -180,10 +224,11 @@ rejected.
 - **The tool list is a starting point.** It comes from one owner's usage
   history; the rule is to start restrictive and add a tool to the base only
   when real runs show it missing in every project.
-- **Only `claude --version` is exercised.** A real headless run needs the
-  broker (D1), so runtime dependencies beyond starting the binary (for
-  instance `procps` for process listing) are validated by the first real run,
-  not by this image.
+- **The first launch state is a snapshot.** Its keys are undocumented and
+  can change with the pinned version; the only guard is the first launch
+  replayed in the acceptance. Runtime dependencies beyond starting the binary
+  (for instance `procps` for process listing) are validated by real runs, not
+  by this image.
 - **The manifest signature is checked at bump time, not at build time.** The
   build re-checks the pinned SHA256, which is what the signature covered when
   the maintainer verified it. Verifying the signature in every build would add

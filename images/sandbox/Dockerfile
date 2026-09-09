@@ -57,14 +57,23 @@ RUN apt-get update \
 COPY --from=download /claude /usr/local/bin/claude
 
 # Claude Code refuses to bypass permissions when running as root, so the agent
-# runs as a dedicated user. The home directory is created empty on purpose:
-# useradd would otherwise copy /etc/skel (.bashrc, .profile), and R1 wants
-# nothing in $HOME that the run did not write. /work is where the repository
-# will live; it is created here, owned by the user, because WORKDIR would
-# create it owned by root and git would refuse the directory.
+# runs as a dedicated user. The home directory is created by hand, not by
+# useradd, which would copy /etc/skel (.bashrc, .profile): R1 wants nothing
+# from the host in $HOME, only what this Dockerfile and the run write. /work is
+# where the repository will live; it is created here, owned by the user,
+# because WORKDIR would create it owned by root and git would refuse the
+# directory.
 RUN groupadd --gid 1000 agent \
     && useradd --uid 1000 --gid agent --shell /bin/bash --no-create-home agent \
     && install -d -m 0755 -o agent -g agent /home/agent /work
+
+# The only file in $HOME: the state Claude Code writes after its first launch
+# (onboarding done, /work trusted), so that a fresh sandbox answers the first
+# turn instead of asking. No credential and no version in it; the keys are
+# undocumented and measured on the pinned version, so the first launch is
+# replayed by hand at every bump (README.md). Mode 0600 is what claude gives
+# the file when it writes it itself.
+COPY --chown=agent:agent --chmod=0600 claude.json /home/agent/.claude.json
 
 # HOME is set explicitly rather than derived from /etc/passwd by the runtime,
 # because claude writes its state under $HOME and the guest init must not be
