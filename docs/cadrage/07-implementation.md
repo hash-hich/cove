@@ -43,9 +43,10 @@ chaîne d'outils nécessaire à la tâche ; aucun montage du `$HOME` ni d'un che
 du poste (R1 par absence). L'image de base est définie dans `images/sandbox/`
 (D9) : Debian trixie slim épinglée par digest, binaire natif de Claude Code
 épinglé par version et SHA256, `git` et les outils courants du modèle
-(curl, jq, patch, ps, python3), utilisateur `agent` (uid 1000) avec
-`/home/agent` vide et le dépôt dans `/work`, `DISABLE_UPDATES=1` pour que la
-version épinglée soit celle qui s'exécute. Ses garanties sont structurelles
+(curl, jq, patch, ps, python3), utilisateur `agent` (uid 1000) avec pour seul
+contenu de `/home/agent` l'état de premier lancement de Claude Code (onboarding
+fait, `/work` de confiance) et le dépôt dans `/work`, `DISABLE_UPDATES=1` pour
+que la version épinglée soit celle qui s'exécute. Ses garanties sont structurelles
 (P2) : le Dockerfile est la spec et le build le test ; ce qui peut les défaire
 est l'appel du wrapper (montages, variables, utilisateur), testé en Go avec
 lui. Les chaînes d'outils propres à un projet viennent en couche au-dessus de
