@@ -76,6 +76,8 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "send two prompts", args: sendArgs(demo, "a", "b"), wantStderr: "takes one prompt"},
 		{name: "send empty prompt", args: sendArgs(demo, ""), wantStderr: "the prompt is empty"},
 		{name: "send empty resume", args: sendArgs("-r", "", demo), wantStderr: "--resume requires a thread"},
+		{name: "send continue driven", args: sendArgs("-c", demo, "go on"), wantStderr: "--continue takes no prompt"},
+		{name: "send continue and resume", args: sendArgs("-c", "-r", review, demo), wantStderr: "mutually exclusive"},
 		{name: "send unknown flag", args: sendArgs("--bogus", demo), wantStderr: unknownFlag},
 		{name: "send docker detach", args: sendArgs("-d", demo), wantStderr: "not defined: -d"},
 	}
@@ -229,6 +231,12 @@ func TestParseSend(t *testing.T) {
 			want: sandbox.SendSpec{Target: demo, Thread: review, Resume: true, Name: "ignored"},
 		},
 		{name: "name", args: []string{"-n", review, demo}, want: sandbox.SendSpec{Target: demo, Name: review}},
+		{name: "continue", args: []string{"-c", demo}, want: sandbox.SendSpec{Target: demo, Continue: true}},
+		{
+			name: "continue, long form and named",
+			args: []string{"--continue", "--name", review, demo},
+			want: sandbox.SendSpec{Target: demo, Continue: true, Name: review},
+		},
 		{
 			name: "a prompt is not parsed for flags",
 			args: []string{demo, "--help me"},

@@ -14,6 +14,7 @@ import (
 const (
 	demo   = "demo"
 	thread = "0b7f1a3c-9e42-4d51-8a6b-2f0c5d7e1934"
+	review = "review"
 )
 
 func TestSendSpecArgs(t *testing.T) {
@@ -43,13 +44,23 @@ func TestSendSpecArgs(t *testing.T) {
 		},
 		{
 			name: "resumed by display name, attached",
-			spec: sandbox.SendSpec{Target: demo, Thread: "review", Resume: true},
+			spec: sandbox.SendSpec{Target: demo, Thread: review, Resume: true},
 			want: "exec --interactive --tty " + demo + " claude --resume review",
 		},
 		{
 			name: "named thread",
-			spec: sandbox.SendSpec{Target: demo, Prompt: "hi", Thread: thread, Name: "review"},
+			spec: sandbox.SendSpec{Target: demo, Prompt: "hi", Thread: thread, Name: review},
 			want: "exec " + demo + " claude --session-id " + thread + " --name review --print --output-format json",
+		},
+		{
+			name: "continued, attached",
+			spec: sandbox.SendSpec{Target: demo, Continue: true},
+			want: "exec --interactive --tty " + demo + " claude --continue",
+		},
+		{
+			name: "continued and named",
+			spec: sandbox.SendSpec{Target: demo, Continue: true, Name: review},
+			want: "exec --interactive --tty " + demo + " claude --continue --name review",
 		},
 	}
 

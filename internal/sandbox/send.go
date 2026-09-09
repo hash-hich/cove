@@ -22,6 +22,11 @@ type SendSpec struct {
 	Thread string
 	// Resume tells whether Thread names a conversation that already exists.
 	Resume bool
+	// Continue picks up the last conversation of the sandbox instead of naming one; Thread is then
+	// unused. Attached regime only: claude keeps no record of its driven threads for --continue, so
+	// a driven turn would silently start afresh. The CLI refuses that combination before it gets
+	// here.
+	Continue bool
 	// Name is the display name to give the thread; empty leaves it unnamed.
 	Name string
 }
@@ -37,15 +42,19 @@ type SendSpec struct {
 // The identity of the thread is always cove's: the UUID it drew (--session-id) or the one the
 // caller resumes (--resume, which claude resolves from a UUID as from a display name). Cove keeps
 // no index of its own and reads nothing inside the box to know which thread it is talking to.
+// --continue is the one exception, by choice: the last thread is whatever claude says it is.
 func (s SendSpec) Args() []string {
 	args := []string{"exec"}
 	if s.Prompt == "" {
 		args = append(args, "--interactive", "--tty")
 	}
 	args = append(args, s.Target, agent)
-	if s.Resume {
+	switch {
+	case s.Continue:
+		args = append(args, "--continue")
+	case s.Resume:
 		args = append(args, "--resume", s.Thread)
-	} else {
+	default:
 		args = append(args, "--session-id", s.Thread)
 	}
 	if s.Name != "" {

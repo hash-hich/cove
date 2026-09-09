@@ -36,7 +36,7 @@ func sendCommand(a *App, args []string) int {
 		return exitRefused
 	}
 
-	if !spec.Resume {
+	if !spec.Resume && !spec.Continue {
 		spec.Thread = sandbox.NewThreadID()
 		// Driven, the identifier comes back in the session_id of the JSON, and stdout must carry
 		// that JSON and nothing else. Attached there is no JSON and stdout is the PTY, so stderr is
@@ -65,6 +65,8 @@ func parseSend(args []string) (sandbox.SendSpec, error) {
 	fs.Usage = func() {}
 	fs.StringVar(&spec.Thread, "r", "", "")
 	fs.StringVar(&spec.Thread, "resume", "", "")
+	fs.BoolVar(&spec.Continue, "c", false, "")
+	fs.BoolVar(&spec.Continue, "continue", false, "")
 	fs.StringVar(&spec.Name, "n", "", "")
 	fs.StringVar(&spec.Name, "name", "", "")
 
@@ -77,13 +79,29 @@ func parseSend(args []string) (sandbox.SendSpec, error) {
 			spec.Resume = true
 		}
 	})
-	if spec.Resume && spec.Thread == "" {
-		return spec, errors.New("--resume requires a thread, by UUID or by display name")
-	}
 	if err := readOperands(&spec, fs.Args()); err != nil {
 		return spec, err
 	}
+	if err := checkThread(spec); err != nil {
+		return spec, err
+	}
 	return spec, nil
+}
+
+// checkThread rejects the thread flags that name no thread or two at once.
+func checkThread(spec sandbox.SendSpec) error {
+	if spec.Resume && spec.Thread == "" {
+		return errors.New("--resume requires a thread, by UUID or by display name")
+	}
+	if spec.Resume && spec.Continue {
+		return errors.New("--continue and --resume are mutually exclusive")
+	}
+	// Driven, claude's --continue skips the threads driven turns created and starts afresh without
+	// a word: the caller would believe the agent has lost the thread.
+	if spec.Continue && spec.Prompt != "" {
+		return errors.New("--continue takes no prompt; to send one to an existing thread, use --resume THREAD")
+	}
+	return nil
 }
 
 // readOperands reads the positional arguments of send into spec: the sandbox, and the prompt when
@@ -117,12 +135,15 @@ runs that one turn and the JSON it answers is copied to stdout as it comes.
 Without one, a terminal is attached to the agent and the conversation lives in
 its REPL until it is left.
 
-Each send opens a new thread unless --resume continues one. A sandbox carries as
-many threads as it is sent, all sharing its files, and cove arbitrates neither
-their writes nor their names. The identifier of a new thread is the session_id
-of the JSON, and is printed on stderr when a terminal is attached.
+Each send opens a new thread unless --resume or --continue picks one up. A
+sandbox carries as many threads as it is sent, all sharing its files, and cove
+arbitrates neither their writes nor their names. The identifier of a new thread
+is the session_id of the JSON, and is printed on stderr when a terminal is
+attached. --continue reaches the last attached thread only: the agent keeps no
+record of driven ones for it, so it takes no prompt.
 
 Options:
+  -c, --continue        Attach to the last thread of the sandbox
   -r, --resume string   Continue a thread, by UUID or by display name
   -n, --name string     Set a display name for the thread, to resume it by
 
