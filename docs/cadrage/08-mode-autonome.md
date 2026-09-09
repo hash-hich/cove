@@ -4,9 +4,9 @@ Le MVP est interactif et supervisé : la session complète vit dans le REPL de
 Claude Code, l'humain répond au terminal, rien à concevoir. Le terminal
 rattaché par `container exec -it` est un PTY dont les octets traversent bruts,
 séquences d'échappement comprises (D10) : c'est une exception à R6 (S17),
-acceptée pour le MVP interactif en local parce qu'un humain regarde ce terminal et que
-le wrapper n'y interprète rien lui-même ; le mode autonome, sans terminal, n'en
-hérite pas. Ce paragraphe conçoit
+acceptée parce qu'un humain regarde ce terminal et que le wrapper n'y interprète
+rien lui-même, et permanente puisque le régime attaché de `send` reste (§11) ;
+le mode autonome, sans terminal, n'en hérite pas. Ce paragraphe conçoit
 le régime **autonome** qui vient après — quand aucun humain n'est dans la boucle.
 C'est de la conception, cohérente avec P0 et P6 ; elle n'est pas requise pour le
 MVP.
@@ -42,14 +42,15 @@ sinon fais ta meilleure tentative et documente tes hypothèses » vit dans le
 **Le fil de commentaires de la MR *est* la session, rendue asynchrone.** Question
 de l'agent → commentaire ; réponse humaine → commentaire, qui **déclenche un tour
 de plus** de l'agent. Trois verbes aux rôles disjoints. `run` crée la sandbox, la
-VM et l'agent dedans, et rien d'autre. Un **verbe d'interaction** envoie un tour à
-l'agent de cette sandbox, autant de fois qu'on veut, en mode piloté et borné
-(autonome) comme en mode conversationnel ; c'est lui qui porte la reprise d'une
-session, jamais `run`. `stop` arrête la VM, `kill` la tue : le coupe-circuit
+VM et l'agent dedans, et rien d'autre. Le **verbe d'interaction**, `send`, parle
+à l'agent de cette sandbox, autant de fois qu'on veut : avec un prompt il envoie
+un tour, piloté et borné (autonome), sans prompt il attache un terminal
+(conversationnel) ; c'est lui qui porte la reprise d'une session (`--resume`),
+jamais `run`. `stop` arrête la VM, `kill` la tue : le coupe-circuit
 asymétrique pour un run emballé (R4/R5). Autour, les verbes de docker que les
 développeurs connaissent, `list` (alias `ls` et `ps`), `rm`, `logs`. En local on
-tape le verbe d'interaction ; en mode forge, l'amont de D8 traduit « réponse au
-commentaire » en ce même verbe, et le wrapper reste sans surface entrante.
+tape `send` ; en mode forge, l'amont de D8 traduit « réponse au commentaire » en
+ce même verbe, et le wrapper reste sans surface entrante.
 
 **Reprendre après `stop` impose de persister l'état de session hors de la
 boîte.** Tant que la VM tourne, la session vit dedans et le verbe d'interaction

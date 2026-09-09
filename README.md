@@ -63,7 +63,9 @@ system service started.
 container build --platform linux/arm64 -t cove-sandbox:local images/sandbox
 go build -o bin/cove ./cmd/cove
 bin/cove run --name demo          # a micro-VM, kept alive until stopped
-container exec -it demo claude    # until cove has its own verb to talk to the agent
+bin/cove send demo                # a terminal on the agent; leave it, the VM stays
+bin/cove send demo "run the tests"   # one turn, its JSON on stdout, a new thread
+bin/cove send -r <session_id> demo "and fix them"   # the next turn of that thread
 bin/cove list                     # the running sandboxes; -a for the stopped ones too
 bin/cove stop demo                # or: bin/cove stop --all
 ```
@@ -87,6 +89,20 @@ one with `-a`, and only their IDs with `-q`, as `docker ps`. The columns are
 those of `container list`, and `--format json` gives the same rows as an array
 of objects. Like `stop`, it only ever reports VMs cove created. Exit code: 0; 2
 on a usage error; 125 when cove could not run `container`.
+
+`cove send` talks to the agent of a sandbox, a light layer over
+`container exec`. Without a prompt it attaches a terminal to the agent's REPL;
+with one it drives a single turn and copies the JSON of `claude` to stdout,
+unparsed and unfiltered. Each send opens a new thread unless `-r` resumes one,
+by UUID or by the display name `-n` gave it; a sandbox carries as many threads
+as it is sent, sharing its files, and cove arbitrates nothing between them. The
+UUID is cove's, drawn before the agent says anything: it is the `session_id` of
+the JSON, and is printed on stderr when a terminal is attached. Only these flags
+and the prompt reach `claude`: cove builds the argument array itself. Like
+`stop`, it refuses a VM cove did not create; a stopped one is left to
+`container exec`, which refuses it. Exit code: the one of `container exec`,
+which carries the one of `claude`; 1 when the target is refused; 2 on a usage
+error; 125 when cove could not run `container`.
 
 ## Design notes
 

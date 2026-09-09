@@ -58,9 +58,9 @@ JSON de `list` et `inspect`. Cove est une interface entre le moteur de VM
 démon, à la manière de terraform. Une VM survit à la fin de cove comme à celle
 du CLI `container` (service launchd propre, signaux au CLI non transmis) ; sa
 destruction est un verbe explicite, jamais un effet de bord. Trois rôles (§12) :
-`run` crée la sandbox et rend la main dès que la VM tourne, le verbe
-d'interaction envoie un tour à l'agent (un processus Claude par tour, lancé par
-`exec`, repris par son identifiant de session), `stop` arrête la VM.
+`run` crée la sandbox et rend la main dès que la VM tourne, `send` parle à
+l'agent (un processus Claude par tour, lancé par `exec`, repris par son
+identifiant de session), `stop` arrête la VM.
 
 *Processus 1 de la VM.* Comme aucun Claude n'occupe la place entre deux tours,
 la VM a besoin d'un processus 1 qui attend de `run` à `stop`, et Linux traite ce
@@ -114,6 +114,49 @@ l'arrêt. Codes : celui de `container`, 1 si une cible a été refusée ou est
 inconnue, 2 en erreur d'usage, 125 quand cove n'a pas pu exécuter `container`
 (comme `run` ; docker réserve 125 à `run`, podman le généralise, `container`
 ne rend que 1).
+
+*Interaction.* `send` est une couche mince sur `container exec` : deux régimes
+dans un verbe, comme `sbx run` chez Docker, seul harnais du marché à les porter
+ensemble. Sans prompt, `exec -it` attache le REPL de l'agent au terminal ; avec
+un prompt, `exec` lance `claude --print --output-format json` et cove recopie
+le JSON sur stdout sans le parser ni promettre son schéma (l'inverse de `list`,
+qui rend des objets de cove : unifier la sortie de tous les agents serait un
+contrat intenable). Pas de mode texte : ce serait le seul chemin à exiger un
+filtre. Cove possède l'argv de l'agent : le prompt positionnel, `--session-id`,
+`-n`, `--resume`, et rien d'autre ; pas de `--` qui passerait l'argv tel quel
+comme le fait `sbx`, parce que le contrat de sortie tient à des drapeaux que
+l'utilisateur écraserait (P2). Identité du fil : cove tire un UUID v4 et le
+pose en `--session-id`, donc aucun octet lu dans la boîte ne devient un
+identifiant (R6) ; `-n` nomme le fil et `--resume` accepte l'UUID comme le nom,
+`claude` résolvant les deux, cove ne tient aucun index. Chaque `send` sans
+`--resume` ouvre un fil neuf : deux tours de suite ne se parlent pas sauf à le
+dire, seule lecture sans implicite dans une sandbox qui porte plusieurs fils.
+Ceux-ci partagent `/work` et cove n'arbitre ni leurs écritures ni leurs noms en
+double ni deux tours à la fois dans le même fil : le contrôle appartient à qui
+pilote (D8), et le diff qui sort d'une sandbox à plusieurs fils ne se rattache à
+aucun d'eux. L'identifiant n'est écrit nulle part en régime piloté, où stdout
+doit porter le JSON et rien d'autre et où il est déjà le `session_id` ; en
+régime attaché, sans JSON et stdout étant le PTY, il est annoncé sur stderr.
+Neutralisation : aucune. Le JSON échappe les caractères de contrôle `U+0000` à
+`U+001F` (RFC 8259), donc l'octet ESC n'est pas dans le flux, absence plutôt que
+règle à tenir à jour ; ce qui le décode ensuite (`jq -r`) le rematérialise et en
+répond ; le PTY passe brut, exception à R6 déjà nommée au §12, qui devient
+permanente puisque le régime attaché reste. Ce n'est pas une position générale
+sur le filtrage : le même texte rendu dans une MR relève de R7′ et de S31. La
+cible est confrontée au label comme pour `stop` ; une sandbox arrêtée n'est pas
+démarrée pour l'occasion, `container exec` la refuse (`is not running`, 1) et
+cove rend ce refus tel quel. Les bornes (TTL, tours, budget) sont hors de ce
+verbe (R4, D5). Mesuré sur `claude` 2.1.258 (hôte) puis 2.1.236 (image) : un
+`--session-id` imposé revient tel quel dans le `session_id` ; `--resume`
+reprend par UUID et par nom, en print mode aussi, historique porté ; `-n`
+persiste dans la transcription (enregistrement `custom-title`), pas seulement
+dans le registre des sessions vivantes ; deux fils de même nom font échouer
+`--resume <nom>` en listant les UUID candidats au lieu d'en choisir un ; un
+tour qui échoue laisse stdout vide ou strictement JSON, écrit du texte sur
+stderr et sort 1 ; `--continue` ignore les sessions créées en print mode, il ne
+peut donc pas porter un fil piloté. Codes : celui de `container exec`, qui
+porte celui de `claude`, 1 si la cible est refusée, 2 en erreur d'usage, 125
+quand cove n'a pas pu exécuter `container`.
 
 **Réseau (D10)** :
 la VM reçoit une adresse non stable du réseau NAT `default`
