@@ -20,6 +20,9 @@ const binary = "container"
 
 // Engine runs sandboxes through the container CLI.
 type Engine struct {
+	// Stdin is what the CLI reads; nil gives it an empty input, which is what every verb but an
+	// attached send wants.
+	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
 }
@@ -44,7 +47,7 @@ func (e *Engine) Run(ctx context.Context, spec Spec) (int, error) {
 func (e *Engine) exec(ctx context.Context, bin string, args []string) (int, error) {
 	//nolint:gosec // G204: bin comes from LookPath and the arguments from a Spec, never from a shell string.
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Stdout, cmd.Stderr = e.Stdout, e.Stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = e.Stdin, e.Stdout, e.Stderr
 	err := cmd.Run()
 	if err == nil {
 		return 0, nil
