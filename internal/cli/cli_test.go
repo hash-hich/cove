@@ -2,6 +2,9 @@ package cli_test
 
 import (
 	"bytes"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -301,6 +304,47 @@ func TestParseList(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, tt.want, opts)
+		})
+	}
+}
+
+func TestAnnounced(t *testing.T) {
+	t.Parallel()
+
+	// A character device stands for the terminal a test has no way to open.
+	tty, err := os.Open(os.DevNull)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, tty.Close()) })
+	running := []sandbox.VM{{ID: demo, State: "running", Labels: map[string]string{sandbox.LabelKey: sandbox.LabelValue}}}
+	stopped := []sandbox.VM{{ID: demo, State: "stopped", Labels: map[string]string{sandbox.LabelKey: sandbox.LabelValue}}}
+
+	tests := []struct {
+		name  string
+		stdin io.Reader
+		spec  sandbox.SendSpec
+		vms   []sandbox.VM
+		want  bool
+	}{
+		{name: "attached to a running sandbox", stdin: tty, spec: sandbox.SendSpec{Target: demo}, vms: running, want: true},
+		{
+			name:  "driven",
+			stdin: tty,
+			spec:  sandbox.SendSpec{Target: demo, Prompt: "go"},
+			vms:   running,
+		},
+		{name: "stopped sandbox", stdin: tty, spec: sandbox.SendSpec{Target: demo}, vms: stopped},
+		{name: "unknown sandbox", stdin: tty, spec: sandbox.SendSpec{Target: "other"}, vms: running},
+		{name: "stdin is not a terminal", stdin: strings.NewReader(""), spec: sandbox.SendSpec{Target: demo}, vms: running},
+		{name: "no stdin at all", spec: sandbox.SendSpec{Target: demo}, vms: running},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := &cli.App{Stdin: tt.stdin, Stdout: io.Discard, Stderr: io.Discard}
+
+			require.Equal(t, tt.want, cli.Announced(app, tt.spec, tt.vms))
 		})
 	}
 }

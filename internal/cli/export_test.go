@@ -11,3 +11,6 @@ var ParseStop = parseStop
 
 // ParseSend exposes parseSend to the tests of the package.
 var ParseSend = parseSend
+
+// Announced exposes announced to the tests of the package.
+var Announced = announced

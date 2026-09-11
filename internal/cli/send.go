@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"slices"
 
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
@@ -41,7 +43,7 @@ func sendCommand(a *App, args []string) int {
 		// Driven, the identifier comes back in the session_id of the JSON, and stdout must carry
 		// that JSON and nothing else. Attached there is no JSON and stdout is the PTY, so stderr is
 		// the only place left to name the thread a later turn would resume.
-		if spec.Prompt == "" {
+		if announced(a, spec, vms) {
 			_, _ = fmt.Fprintf(a.Stderr, "thread %s\n", spec.Thread)
 		}
 	}
@@ -53,6 +55,25 @@ func sendCommand(a *App, args []string) int {
 		return ExitPreflight
 	}
 	return code
+}
+
+// announced reports whether the thread of spec is to be announced: a terminal is about to be
+// attached, on a sandbox that runs, from a terminal (container exec -t needs one, D10). An
+// identifier for a thread that never opened would be resumed in vain.
+func announced(a *App, spec sandbox.SendSpec, vms []sandbox.VM) bool {
+	return spec.Prompt == "" && slices.Contains(sandbox.Running(vms), spec.Target) && terminal(a.Stdin)
+}
+
+// terminal reports whether r is a character device, which a terminal is and a pipe or a file is
+// not. It is an approximation of the real question, whether container exec can attach a TTY: a
+// redirection from another character device passes it, and then the exec fails as it did before.
+func terminal(r io.Reader) bool {
+	f, ok := r.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // parseSend turns the arguments of send into a send spec. It returns flag.ErrHelp when help was
