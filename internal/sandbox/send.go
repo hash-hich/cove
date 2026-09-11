@@ -44,7 +44,7 @@ type SendSpec struct {
 // no index of its own and reads nothing inside the box to know which thread it is talking to.
 // --continue is the one exception, by choice: the last thread is whatever claude says it is.
 func (s SendSpec) Args() []string {
-	args := []string{"exec"}
+	args := []string{execVerb}
 	if s.Prompt == "" {
 		args = append(args, "--interactive", "--tty")
 	}

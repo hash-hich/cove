@@ -18,6 +18,9 @@ var ErrImageMissing = errors.New("sandbox image not found")
 // binary is the container CLI, looked up on the PATH.
 const binary = "container"
 
+// execVerb is the verb of that CLI which runs a program in a VM that already runs.
+const execVerb = "exec"
+
 // Engine runs sandboxes through the container CLI.
 type Engine struct {
 	// Stdin is what the CLI reads; nil gives it an empty input, which is what every verb but an
