@@ -83,7 +83,7 @@ func printUsage(w io.Writer, fs *flag.FlagSet) {
 	_, _ = fmt.Fprintln(w, "Commands:")
 	_, _ = fmt.Fprintln(w, "  help    Show help")
 	_, _ = fmt.Fprintln(w, "  list    List sandboxes (aliases: ls, ps)")
-	_, _ = fmt.Fprintln(w, "  run     Create a sandbox")
+	_, _ = fmt.Fprintln(w, "  run     Create a sandbox from a repository")
 	_, _ = fmt.Fprintln(w, "  send    Talk to the agent of a sandbox")
 	_, _ = fmt.Fprintln(w, "  stop    Stop sandboxes")
 	fs.SetOutput(w)

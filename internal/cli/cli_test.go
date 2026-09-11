@@ -23,6 +23,9 @@ const (
 	table = "table"
 	// review is the display name the send tests give a thread.
 	review = "review"
+	// repo and fix are the repository and the branch the run tests name.
+	repo = "https://forge.example/group/repo.git"
+	fix  = "fix"
 )
 
 // runArgs prefixes args with the run command.
@@ -56,12 +59,15 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "no arguments", args: nil},
 		{name: "unknown command", args: []string{"bogus"}},
 		{name: "unknown flag", args: []string{"--bogus"}},
-		{name: "run unknown flag", args: runArgs("--bogus"), wantStderr: unknownFlag},
-		{name: "run docker session flags", args: runArgs("-it"), wantStderr: "not defined: -it"},
-		{name: "run rm and keep", args: runArgs("--rm", "--keep"), wantStderr: "mutually exclusive"},
-		{name: "run bad cpus", args: runArgs("--cpus", "x"), wantStderr: "invalid value"},
-		{name: "run negative cpus", args: runArgs("--cpus", "-1"), wantStderr: "must be positive"},
-		{name: "run command", args: runArgs("bash"), wantStderr: "takes no command"},
+		{name: "run unknown flag", args: runArgs("--bogus", repo), wantStderr: unknownFlag},
+		{name: "run docker session flags", args: runArgs("-it", repo), wantStderr: "not defined: -it"},
+		{name: "run rm and keep", args: runArgs("--rm", "--keep", repo), wantStderr: "mutually exclusive"},
+		{name: "run bad cpus", args: runArgs("--cpus", "x", repo), wantStderr: "invalid value"},
+		{name: "run negative cpus", args: runArgs("--cpus", "-1", repo), wantStderr: "must be positive"},
+		{name: "run no url", args: runArgs(), wantStderr: "requires 1 argument"},
+		{name: "run branch with =", args: runArgs("-b", "x=1", repo), wantStderr: "cannot label the branch"},
+		{name: "run command", args: runArgs(repo, "bash"), wantStderr: "takes no command"},
+		{name: "run git clone depth", args: runArgs("--depth", "1", repo), wantStderr: "not defined: -depth"},
 		{name: "stop no target", args: stopArgs(), wantStderr: "requires at least 1 argument"},
 		{name: "stop all with target", args: stopArgs("--all", demo), wantStderr: "takes no target"},
 		{name: "stop unknown flag", args: stopArgs("--bogus", demo), wantStderr: unknownFlag},
@@ -144,19 +150,24 @@ func TestParseRun(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
-		want sandbox.Spec
+		want cli.RunOptions
 	}{
-		{name: "no flags", args: nil, want: sandbox.Spec{}},
-		{name: "rm is the default", args: []string{"--rm"}, want: sandbox.Spec{}},
+		{name: "url only", args: []string{repo}, want: cli.RunOptions{URL: repo}},
+		{name: "rm is the default", args: []string{"--rm", repo}, want: cli.RunOptions{URL: repo}},
 		{
 			name: "every flag",
-			args: []string{"--name", demo, "--keep", "--cpus", "2", "-m", "4G", "-e", "FOO=bar", "-e", "TERM"},
-			want: sandbox.Spec{Name: demo, Keep: true, CPUs: 2, Memory: "4G", Env: []string{"FOO=bar", "TERM"}},
+			args: []string{
+				"-b", fix, "--name", demo, "--keep", "--cpus", "2", "-m", "4G", "-e", "FOO=bar", "-e", "TERM", repo,
+			},
+			want: cli.RunOptions{
+				Spec: sandbox.Spec{Name: demo, Keep: true, CPUs: 2, Memory: "4G", Env: []string{"FOO=bar", "TERM"}, Branch: fix},
+				URL:  repo,
+			},
 		},
 		{
 			name: longForms,
-			args: []string{"--memory=4G", "--env=BAR=baz"},
-			want: sandbox.Spec{Memory: "4G", Env: []string{"BAR=baz"}},
+			args: []string{"--branch=fix", "--memory=4G", "--env=BAR=baz", repo},
+			want: cli.RunOptions{Spec: sandbox.Spec{Memory: "4G", Env: []string{"BAR=baz"}, Branch: fix}, URL: repo},
 		},
 	}
 
@@ -164,10 +175,10 @@ func TestParseRun(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			spec, err := cli.ParseRun(tt.args)
+			opts, err := cli.ParseRun(tt.args)
 
 			require.NoError(t, err)
-			require.Equal(t, tt.want, spec)
+			require.Equal(t, tt.want, opts)
 		})
 	}
 }
