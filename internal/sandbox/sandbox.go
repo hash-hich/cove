@@ -1,7 +1,15 @@
 // Package sandbox launches the cove micro-VM through the container CLI.
 package sandbox
 
-import "strconv"
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+)
+
+// ErrBranchLabel reports a branch that cannot be the label of a VM.
+var ErrBranchLabel = errors.New("cannot label the branch")
 
 // Image is the sandbox image, built from images/sandbox and stored locally only (D9).
 const Image = "cove-sandbox:local"
@@ -18,6 +26,21 @@ const (
 // Label is the label as container run takes it.
 const Label = LabelKey + "=" + LabelValue
 
+// BranchLabelKey is the label that carries the branch the agent starts from, and where its work
+// is expected back: written by cove on the host at run, never by the agent, so that the retrieval
+// can trust it (R8). The URL is not labelled: it may carry a credential (R2).
+const BranchLabelKey = "cove.branch"
+
+// CheckBranch returns ErrBranchLabel when branch cannot be the value of BranchLabelKey: container
+// refuses a label whose value contains = ("invalid label format", measured on 1.3.1), which git
+// allows in a branch name. It is checked before anything is fetched, since the label is set at run.
+func CheckBranch(branch string) error {
+	if strings.Contains(branch, "=") {
+		return fmt.Errorf("%w %q: container refuses a label value containing =", ErrBranchLabel, branch)
+	}
+	return nil
+}
+
 // Spec describes a sandbox to launch: the options the user may set on top of the fixed image and
 // process.
 type Spec struct {
@@ -31,6 +54,8 @@ type Spec struct {
 	Memory string
 	// Env holds the KEY=VALUE or bare KEY (inherited from the host) entries to pass to the VM.
 	Env []string
+	// Branch is the branch the agent starts from, kept as a label of the VM; empty labels nothing.
+	Branch string
 }
 
 // Args returns the container run argument array for s.
@@ -57,6 +82,9 @@ func (s Spec) Args() []string {
 		args = append(args, "--name", s.Name)
 	}
 	args = append(args, "--label", Label)
+	if s.Branch != "" {
+		args = append(args, "--label", BranchLabelKey+"="+s.Branch)
+	}
 	if s.CPUs > 0 {
 		args = append(args, "--cpus", strconv.Itoa(s.CPUs))
 	}

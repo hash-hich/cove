@@ -34,6 +34,11 @@ func TestSpecArgs(t *testing.T) {
 			spec: sandbox.Spec{Keep: true},
 			want: "run -d --init --label cove=sandbox cove-sandbox:local sleep infinity",
 		},
+		{
+			name: "branch",
+			spec: sandbox.Spec{Branch: "main"},
+			want: "run -d --rm --init --label cove=sandbox --label cove.branch=main cove-sandbox:local sleep infinity",
+		},
 	}
 
 	for _, tt := range tests {
@@ -43,6 +48,13 @@ func TestSpecArgs(t *testing.T) {
 			require.Equal(t, strings.Fields(tt.want), tt.spec.Args())
 		})
 	}
+}
+
+func TestCheckBranch(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, sandbox.CheckBranch("feat/x-1"))
+	require.ErrorIs(t, sandbox.CheckBranch("feat/x=1"), sandbox.ErrBranchLabel)
 }
 
 // TestSpecArgsNeverMountsOrOverridesUser is the test the image README asks for: what can defeat
@@ -57,6 +69,7 @@ func TestSpecArgsNeverMountsOrOverridesUser(t *testing.T) {
 		CPUs:   1,
 		Memory: "--volume",
 		Env:    []string{"-v", "--mount", "-u", "-w"},
+		Branch: "-w",
 	}
 	args := spec.Args()
 
