@@ -190,7 +190,9 @@ contrat intenable). Pas de mode texte : ce serait le seul chemin à exiger un
 filtre. Cove possède l'argv de l'agent : le prompt positionnel, `--session-id`,
 `-n`, `--resume`, `--continue`, et rien d'autre ; pas de `--` qui passerait l'argv tel quel
 comme le fait `sbx`, parce que le contrat de sortie tient à des drapeaux que
-l'utilisateur écraserait (P2). Identité du fil : cove tire un UUID v4 et le
+l'utilisateur écraserait (P2). Le prompt est placé derrière un `--` posé par
+cove, pour que `claude` le lise comme prompt même s'il commence par un tiret
+(mesuré : sans lui, `--version` affiche la version et sort 0). Identité du fil : cove tire un UUID v4 et le
 pose en `--session-id`, donc aucun octet lu dans la boîte ne devient un
 identifiant (R6) ; `-n` nomme le fil et `--resume` accepte l'UUID comme le nom,
 `claude` résolvant les deux, cove ne tient aucun index. Chaque `send` sans

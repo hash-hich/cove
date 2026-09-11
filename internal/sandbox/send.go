@@ -43,6 +43,9 @@ type SendSpec struct {
 // caller resumes (--resume, which claude resolves from a UUID as from a display name). Cove keeps
 // no index of its own and reads nothing inside the box to know which thread it is talking to.
 // --continue is the one exception, by choice: the last thread is whatever claude says it is.
+//
+// The prompt comes after --, so that one starting with a dash is a prompt and not a flag of claude
+// (measured: without it, a prompt of --version prints the version and exits 0).
 func (s SendSpec) Args() []string {
 	args := []string{execVerb}
 	if s.Prompt == "" {
@@ -61,7 +64,7 @@ func (s SendSpec) Args() []string {
 		args = append(args, "--name", s.Name)
 	}
 	if s.Prompt != "" {
-		args = append(args, "--print", "--output-format", "json", s.Prompt)
+		args = append(args, "--print", "--output-format", "json", "--", s.Prompt)
 	}
 	return args
 }

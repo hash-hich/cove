@@ -30,7 +30,12 @@ func TestSendSpecArgs(t *testing.T) {
 		{
 			name: "driven turn",
 			spec: sandbox.SendSpec{Target: demo, Prompt: "fix the build", Thread: thread},
-			want: "exec " + demo + " claude --session-id " + thread + " --print --output-format json",
+			want: "exec " + demo + " claude --session-id " + thread + " --print --output-format json --",
+		},
+		{
+			name: "a prompt that starts with a dash",
+			spec: sandbox.SendSpec{Target: demo, Prompt: "--version", Thread: thread},
+			want: "exec " + demo + " claude --session-id " + thread + " --print --output-format json --",
 		},
 		{
 			name: "attached terminal",
@@ -40,7 +45,7 @@ func TestSendSpecArgs(t *testing.T) {
 		{
 			name: "resumed by UUID",
 			spec: sandbox.SendSpec{Target: demo, Prompt: "go on", Thread: thread, Resume: true},
-			want: "exec " + demo + " claude --resume " + thread + " --print --output-format json",
+			want: "exec " + demo + " claude --resume " + thread + " --print --output-format json --",
 		},
 		{
 			name: "resumed by display name, attached",
@@ -50,7 +55,7 @@ func TestSendSpecArgs(t *testing.T) {
 		{
 			name: "named thread",
 			spec: sandbox.SendSpec{Target: demo, Prompt: "hi", Thread: thread, Name: review},
-			want: "exec " + demo + " claude --session-id " + thread + " --name review --print --output-format json",
+			want: "exec " + demo + " claude --session-id " + thread + " --name review --print --output-format json --",
 		},
 		{
 			name: "continued, attached",
