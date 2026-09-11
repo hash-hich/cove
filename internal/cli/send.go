@@ -48,7 +48,12 @@ func sendCommand(a *App, args []string) int {
 		}
 	}
 
-	engine := &sandbox.Engine{Stdin: a.Stdin, Stdout: a.Stdout, Stderr: a.Stderr}
+	// Stdin reaches the agent only when a terminal is attached to it: a driven turn reads nothing.
+	stdin := a.Stdin
+	if spec.Prompt != "" {
+		stdin = nil
+	}
+	engine := &sandbox.Engine{Stdin: stdin, Stdout: a.Stdout, Stderr: a.Stderr}
 	code, err := engine.Send(ctx, spec)
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove send: %v\n", err)
