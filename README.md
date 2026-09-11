@@ -62,7 +62,8 @@ system service started.
 ```bash
 container build --platform linux/arm64 -t cove-sandbox:local images/sandbox
 go build -o bin/cove ./cmd/cove
-bin/cove run --name demo          # a micro-VM, kept alive until stopped
+bin/cove run --name demo https://gitlab.com/you/repo.git   # a micro-VM with the repository in /work
+bin/cove run -b fix/login https://gitlab.com/you/repo.git  # on that branch instead of the default one
 bin/cove send demo                # a terminal on the agent; leave it, the VM stays
 bin/cove send demo "run the tests"   # one turn, its JSON on stdout, a new thread
 bin/cove send -r <session_id> demo "and fix them"   # the next turn of that thread
@@ -70,13 +71,26 @@ bin/cove list                     # the running sandboxes; -a for the stopped on
 bin/cove stop demo                # or: bin/cove stop --all
 ```
 
-`cove run` creates the sandbox and nothing else; talking to the agent and
-stopping the VM are separate verbs. It takes the flags of `docker run` that this
-role justifies (`--name`, `--rm`, `--keep`, `--cpus`, `-m`, `-e`) and nothing
-else: cove builds the argument array itself, so a mount, a user, a working
-directory, a network option, the SSH agent or a command cannot even be asked
-for. Exit code: 0 once the VM runs; 2 on a usage error; 125 when cove could not
-launch it.
+`cove run` creates the sandbox with the repository in `/work`, and nothing
+else; talking to the agent and stopping the VM are separate verbs. The
+repository is named by its forge URL, never by a local path, and `-b` picks the
+branch to start from, the default branch of the repository otherwise. The whole
+repository is in the box: every branch and tag under its own name, the full
+history, checked out on that branch, and no remote at all, so a `git push` from
+inside fails for lack of a destination and asks for no credential. It is read
+on the host with the access you already have (credential helper, SSH
+configuration), which never enters the VM: the objects travel as a bundle
+through a bare receiver repository that only cove configures (objects checked
+on entry, submodules left empty, the hooks of your global git configuration
+silenced), and everything that can fail does so before the VM exists, so an
+unknown branch or a refused access leaves nothing behind. The agent commits as
+`agent <agent@cove.invalid>`. `run` returns once `/work` is ready and prints
+the name of the VM last. It takes the flags of `docker run` that this role
+justifies (`--name`, `--rm`, `--keep`, `--cpus`, `-m`, `-e`) and nothing else:
+cove builds the argument array itself, so a mount, a user, a working directory,
+a network option, the SSH agent or a command cannot even be asked for. Exit
+code: 0 once `/work` is ready; 2 on a usage error; 125 when cove could not
+create the sandbox, in which case no VM is left.
 
 `cove stop` stops sandboxes by name or ID, or every running one with `--all`,
 with the `-s` and `-t` of `docker stop`. It only ever stops VMs cove created:

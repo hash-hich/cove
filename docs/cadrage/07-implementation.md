@@ -59,7 +59,7 @@ JSON de `list` et `inspect`. Cove est une interface entre le moteur de VM
 démon, à la manière de terraform. Une VM survit à la fin de cove comme à celle
 du CLI `container` (service launchd propre, signaux au CLI non transmis) ; sa
 destruction est un verbe explicite, jamais un effet de bord. Trois rôles (§12) :
-`run` crée la sandbox et rend la main dès que la VM tourne, `send` parle à
+`run` crée la sandbox et rend la main quand `/work` est prêt, `send` parle à
 l'agent (un processus Claude par tour, lancé par `exec`, repris par son
 identifiant de session), `stop` arrête la VM.
 
@@ -96,7 +96,71 @@ plutôt que d'être interdits (P2) ; ce tableau est testé en Go (`internal/sand
 `-d` est posé par cove. Observé : `container run -d` écrit le nom de la VM sur
 stdout (un UUID sans `--name`) et sa progression sur stderr ; `--memory 512m` en
 minuscule est accepté ; `-e` est un passe-plat total pour l'instant. Chaque VM
-porte le label `cove=sandbox`, par lequel cove reconnaît les siennes.
+porte le label `cove=sandbox`, par lequel cove reconnaît les siennes, et
+`cove.branch=<branche>`, écrit côté hôte et jamais par l'agent, où le verbe de
+récupération lira la branche sur laquelle attendre son travail (R8) ; l'URL
+n'est pas étiquetée, elle peut porter un identifiant (R2).
+
+*Codebase.* `run` prend l'URL du dépôt sur sa forge, positionnelle comme dans
+`git clone`, et `-b` pour la branche de départ, celle par défaut du dépôt sinon ;
+jamais un chemin local ni le répertoire courant (H1). La sandbox reçoit tout le
+dépôt dans `/work` : toutes les branches et tous les tags sous leur nom,
+l'historique complet (D2), extrait sur la branche demandée, et aucun remote :
+`git push` échoue par absence de destination sans demander d'identifiant (R2),
+`git fetch` sort 0 sans rien faire. L'identité `agent <agent@cove.invalid>`
+(domaine réservé par la RFC 2606) est posée dans `/work/.git/config`, parce que
+git refuse de commettre sans identité et que ni l'image (D9) ni `$HOME` ne
+doivent la porter. Le dépôt est lu sur le poste avec l'accès du propriétaire
+(helper d'identifiants, `~/.ssh/config`, `url.insteadOf` restent lus ; rien
+n'entre dans la VM, un bundle ne porte que des objets et des refs), dans un
+dépôt récepteur nu et temporaire (R8) que seul l'argv configure (R6, D4) :
+`fetch.fsckObjects` (S20), `fetch.recurseSubmodules=no` (S27, sous-modules
+laissés vides), `protocol.file.allow=never` (git refuse lui-même un chemin
+local), `GIT_NO_REPLACE_OBJECTS=1` (S26), `--git-dir` explicite (un `GIT_DIR`
+hérité de l'appelant redirige `-C`, mesuré), et un répertoire de hooks vide
+donné à la fois en `core.hooksPath` et en `--template` (mesuré : un
+`core.hooksPath` global du propriétaire exécute son `reference-transaction` à
+chaque ref écrite par le fetch, un `init.templateDir` global installe des hooks
+actifs dans le récepteur ; le contenu du dépôt, lui, ne peut rien exécuter :
+aucun arbre n'est extrait sur le poste et `.git/hooks` ne voyage pas). Refspecs
+`refs/heads/*` et `refs/tags/*` seulement : `refs/replace/`, `refs/notes/`,
+`refs/merge-requests/` restent sur la forge. Ordre : `ls-remote --symref` pour
+la branche par défaut, seulement quand aucune n'est demandée ; fetch dans le
+récepteur, la branche demandée nommée dans les refspecs à côté des deux globs,
+ce que git refuse avant tout téléchargement si la forge ne l'a pas (mesuré :
+128, zéro objet) ; puis seulement `container run`, puis le transport : `git bundle create
+-` sur stdout, recopié sur le stdin de `exec -i cp /dev/stdin /tmp/cove.bundle`
+(git ne lit un bundle que dans un fichier régulier, `fetch /dev/stdin` échoue ;
+`container cp` écrit en root), puis dans la VM, sous uid 1000 et sans shell,
+`git init -b <branche>`, `fetch --update-head-ok` du bundle (HEAD désigne déjà
+la branche, non née, et git refuse sinon d'y écrire), `rm` du bundle, `reset
+--hard` (le fetch laisse index et arbre vides), `config user.*`. Écartés :
+`git clone` du bundle (branches sous `refs/remotes/origin/`, `origin` posé sur
+le chemin du bundle), `receive-pack` par `exec -i` (deux fois plus lent, un aide
+ssh), un clone direct depuis la VM pour les dépôts publics (deux mécanismes, et
+la validation après la VM). Tout échec avant `container run` ne laisse rien
+(H4) ; un échec pendant le transport fait `delete --force`, `--keep` ou pas :
+une sandbox sans codebase n'est pas à inspecter. Un signal pendant la création
+l'interrompt et retire ce qu'elle a fait, récepteur et VM ; `container run`
+lui-même n'est jamais interrompu, parce qu'un signal à son CLI laisse tourner
+la VM qu'il démarrait (D10) et que le nom qu'il imprime en finissant est la
+seule prise sur elle, le `delete` survivant au contexte annulé. Un second
+signal retrouve son effet par défaut pour qui n'attend pas ; après le retour
+de `run`, un signal à cove ne concerne plus la VM (D10). Une
+branche dont le nom contient `=` est refusée avant tout : `container` n'accepte
+pas un tel label (mesuré : `invalid label format`). Le nom de la VM n'est écrit
+sur stdout qu'à la fin, en cas de succès ; la progression de git va sur stderr,
+comme celle de `container run`. Codes : 0 avec le nom, 2 en erreur d'usage, 125
+quand cove n'a pas pu créer la sandbox, avant ou après la VM. Limitations
+acceptées : tout le dépôt est retéléchargé à chaque `run` (le récepteur
+persistant viendra avec la récupération), aucun plafond de taille ni de durée
+(D5 ; points d'accroche : un `context` à échéance par commande, et
+`count-objects -v` sur le récepteur avant `container run`), le bundle double
+transitoirement l'espace dans la VM, les invites git au terminal font attendre
+`run` (D8 posera `GIT_TERMINAL_PROMPT=0`). Reportés, chacun un ticket à part :
+le relais à capacités qui rendra l'origine à la sandbox (lecture large, écriture
+bornée à la branche de l'agent, modèle du proxy GitHub de Claude Code web) et
+une version exacte, commit ou tag, comme point de départ (D8 transmet un SHA).
 
 *Arrêt.* `stop` prend un ou plusieurs noms ou identifiants, que `container`
 résout lui-même (observé sur 1.3.1 : l'identifiant est le nom, correspondance
