@@ -41,12 +41,16 @@ func runCommand(a *App, args []string) int {
 	engine := &sandbox.Engine{Stdout: a.Stdout, Stderr: a.Stderr}
 	// No signal handling on purpose: a signal to cove leaves the VM running (D10); stopping it is
 	// an explicit verb.
-	code, err := engine.Run(context.Background(), spec)
+	name, code, err := engine.Run(context.Background(), spec)
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove run: %v\n", err)
 		return ExitPreflight
 	}
-	return code
+	if code != 0 {
+		return code
+	}
+	_, _ = fmt.Fprintln(a.Stdout, name)
+	return 0
 }
 
 // parseRun turns the arguments of run into a sandbox spec. It returns flag.ErrHelp when help was

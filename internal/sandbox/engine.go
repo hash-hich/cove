@@ -27,19 +27,25 @@ type Engine struct {
 	Stderr io.Writer
 }
 
-// Run launches the sandbox described by spec with the engine's streams attached, and returns once
-// the VM runs. It returns the exit code of container run, whose stdout carries the VM name, and an
+// Run launches the sandbox described by spec, its stderr attached to the engine's, and returns once
+// the VM runs. It returns the name of the VM, which container run prints on stdout and which cove
+// captures so that the caller decides when it is announced, the exit code of container run, and an
 // error only when cove itself could not launch it: ErrNotInstalled, ErrImageMissing, or a failure
 // to execute the CLI.
-func (e *Engine) Run(ctx context.Context, spec Spec) (int, error) {
+func (e *Engine) Run(ctx context.Context, spec Spec) (string, int, error) {
 	bin, err := lookPath()
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
 	if err := checkImage(ctx, bin); err != nil {
-		return 0, err
+		return "", 0, err
 	}
-	return e.exec(ctx, bin, spec.Args())
+	var stdout strings.Builder
+	//nolint:gosec // G204: bin comes from LookPath and the arguments from a Spec, never from a shell string.
+	cmd := exec.CommandContext(ctx, bin, spec.Args()...)
+	cmd.Stdout, cmd.Stderr = &stdout, e.Stderr
+	code, err := run(cmd, bin)
+	return strings.TrimSpace(stdout.String()), code, err
 }
 
 // exec runs the container CLI with args and the engine's streams attached. It returns the exit
@@ -48,6 +54,12 @@ func (e *Engine) exec(ctx context.Context, bin string, args []string) (int, erro
 	//nolint:gosec // G204: bin comes from LookPath and the arguments from a Spec, never from a shell string.
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = e.Stdin, e.Stdout, e.Stderr
+	return run(cmd, bin)
+}
+
+// run runs cmd, the container CLI at bin with its streams already set. It returns the exit code
+// of the CLI, and an error only when it could not be executed.
+func run(cmd *exec.Cmd, bin string) (int, error) {
 	err := cmd.Run()
 	if err == nil {
 		return 0, nil
