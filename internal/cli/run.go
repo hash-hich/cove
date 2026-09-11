@@ -38,10 +38,15 @@ func runCommand(a *App, args []string) int {
 		return ExitUsage
 	}
 
+	ctx := context.Background()
+	if err := sandbox.Preflight(ctx); err != nil {
+		_, _ = fmt.Fprintf(a.Stderr, "cove run: %v\n", err)
+		return ExitPreflight
+	}
 	engine := &sandbox.Engine{Stdout: a.Stdout, Stderr: a.Stderr}
 	// No signal handling on purpose: a signal to cove leaves the VM running (D10); stopping it is
 	// an explicit verb.
-	name, code, err := engine.Run(context.Background(), spec)
+	name, code, err := engine.Run(ctx, spec)
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove run: %v\n", err)
 		return ExitPreflight

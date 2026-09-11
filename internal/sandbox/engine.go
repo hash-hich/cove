@@ -27,17 +27,25 @@ type Engine struct {
 	Stderr io.Writer
 }
 
+// Preflight verifies what Run needs before anything else is spent on a sandbox: it returns
+// ErrNotInstalled when the container CLI is not on the PATH, ErrImageMissing when Image is not in
+// the local store, and nil otherwise.
+func Preflight(ctx context.Context) error {
+	bin, err := lookPath()
+	if err != nil {
+		return err
+	}
+	return checkImage(ctx, bin)
+}
+
 // Run launches the sandbox described by spec, its stderr attached to the engine's, and returns once
-// the VM runs. It returns the name of the VM, which container run prints on stdout and which cove
-// captures so that the caller decides when it is announced, the exit code of container run, and an
-// error only when cove itself could not launch it: ErrNotInstalled, ErrImageMissing, or a failure
-// to execute the CLI.
+// the VM runs. Preflight must have passed. It returns the name of the VM, which container run
+// prints on stdout and which cove captures so that the caller decides when it is announced, the
+// exit code of container run, and an error only when cove itself could not launch it:
+// ErrNotInstalled or a failure to execute the CLI.
 func (e *Engine) Run(ctx context.Context, spec Spec) (string, int, error) {
 	bin, err := lookPath()
 	if err != nil {
-		return "", 0, err
-	}
-	if err := checkImage(ctx, bin); err != nil {
 		return "", 0, err
 	}
 	var stdout strings.Builder
