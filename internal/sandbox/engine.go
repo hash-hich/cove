@@ -1,6 +1,7 @@
 package sandbox
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 // ErrNotInstalled reports that the container CLI could not be found.
 var ErrNotInstalled = errors.New("container CLI not found")
 
-// ErrImageMissing reports that Image is not in the local image store.
+// ErrImageMissing reports that the image of a sandbox is not in the local image store.
 var ErrImageMissing = errors.New("sandbox image not found")
 
 // binary is the container CLI, looked up on the PATH.
@@ -31,14 +32,15 @@ type Engine struct {
 }
 
 // Preflight verifies what Run needs before anything else is spent on a sandbox: it returns
-// ErrNotInstalled when the container CLI is not on the PATH, ErrImageMissing when Image is not in
-// the local store, and nil otherwise.
-func Preflight(ctx context.Context) error {
+// ErrNotInstalled when the container CLI is not on the PATH, ErrImageMissing when image is not in
+// the local store, and nil otherwise. An empty image is the default one, as Run reads it.
+func Preflight(ctx context.Context, image string) error {
+	image = cmp.Or(image, Image)
 	bin, err := lookPath()
 	if err != nil {
 		return err
 	}
-	return checkImage(ctx, bin)
+	return checkImage(ctx, bin, image)
 }
 
 // Run launches the sandbox described by spec, its stderr attached to the engine's, and returns once
@@ -90,15 +92,21 @@ func lookPath() (string, error) {
 	return bin, nil
 }
 
-// checkImage fails before container run would: without the image in the local store, run queries
-// docker.io and fails with an authentication error that says nothing about the cause.
-func checkImage(ctx context.Context, bin string) error {
+// checkImage fails before container run would: without image in the local store, run queries
+// docker.io and fails with an authentication error that says nothing about the cause. The build
+// hint names the directory of the default image, the only one cove knows.
+func checkImage(ctx context.Context, bin string, image string) error {
 	var stderr strings.Builder
-	cmd := exec.CommandContext(ctx, bin, "image", "inspect", Image)
+	//nolint:gosec // G204: bin comes from LookPath and image from the caller, behind --.
+	cmd := exec.CommandContext(ctx, bin, "image", "inspect", "--", image)
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%w: %s (build it with: container build --platform linux/arm64 -t %s images/sandbox): %w",
-			ErrImageMissing, strings.TrimSpace(stderr.String()), Image, err)
+		dir := "<the directory of its Dockerfile>"
+		if image == Image {
+			dir = "images/sandbox"
+		}
+		return fmt.Errorf("%w: %s (build it with: container build --platform linux/arm64 -t %s %s): %w",
+			ErrImageMissing, strings.TrimSpace(stderr.String()), image, dir, err)
 	}
 	return nil
 }

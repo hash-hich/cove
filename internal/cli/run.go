@@ -81,7 +81,7 @@ func runCommand(a *App, args []string) int {
 // failure there leaves nothing (H4), and a VM whose seeding failed is deleted before returning:
 // without its repository it is not a sandbox to inspect, --keep or not.
 func create(ctx context.Context, a *App, opts RunOptions) (string, int) {
-	if err := sandbox.Preflight(ctx); err != nil {
+	if err := sandbox.Preflight(ctx, opts.Spec.Image); err != nil {
 		return "", fail(ctx, a, err)
 	}
 	branch, repo, code := fetch(ctx, a, opts)
@@ -207,6 +207,7 @@ func parseRun(args []string) (RunOptions, error) {
 	fs.StringVar(&opts.Spec.Branch, "b", "", "")
 	fs.StringVar(&opts.Spec.Branch, "branch", "", "")
 	fs.StringVar(&opts.Spec.Name, "name", "", "")
+	fs.StringVar(&opts.Spec.Image, "image", sandbox.Image, "")
 	fs.BoolVar(&rm, "rm", false, "")
 	fs.BoolVar(&keep, "keep", false, "")
 	fs.IntVar(&opts.Spec.CPUs, "cpus", 0, "")
@@ -224,6 +225,9 @@ func parseRun(args []string) (RunOptions, error) {
 	}
 	if opts.Spec.CPUs < 0 {
 		return opts, errors.New("--cpus must be positive")
+	}
+	if opts.Spec.Image == "" {
+		return opts, errors.New("--image must name an image")
 	}
 	if opts.Spec.Branch != "" {
 		//nolint:wrapcheck // CheckBranch names the branch and what container refuses; a prefix would repeat it.
@@ -249,7 +253,7 @@ func parseRun(args []string) (RunOptions, error) {
 func printRunUsage(w io.Writer) {
 	_, _ = fmt.Fprint(w, `Usage: cove run [OPTIONS] URL
 
-Create a sandbox: a micro-VM from the `+sandbox.Image+` image, started detached
+Create a sandbox: a micro-VM from an image carrying the agent, started detached
 and kept alive until it is stopped, with the repository at URL in `+sandbox.Work+`.
 The whole repository is there, every branch and tag with its history, checked
 out on the branch asked for or the default one of the repository, and without a
@@ -257,9 +261,13 @@ remote: the agent cannot reach the forge. The repository is read with the access
 this machine already has, which does not enter the VM. Prints the name of the VM
 once `+sandbox.Work+` is ready. Every instruction to the agent is a separate command.
 
+The image is `+sandbox.Image+`, built from images/sandbox, unless --image names
+another one, such as a profile built on it. It must be in the local store.
+
 Options:
   -b, --branch string   Branch to start from; the default branch of the repository otherwise
       --name string     Assign a name to the VM; container picks one otherwise
+      --image string    Image of the VM (default `+sandbox.Image+`)
       --rm              Remove the VM when it stops (default)
       --keep            Keep the stopped VM for inspection instead
       --cpus int        Number of CPUs
