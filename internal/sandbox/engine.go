@@ -13,7 +13,8 @@ import (
 // ErrNotInstalled reports that the container CLI could not be found.
 var ErrNotInstalled = errors.New("container CLI not found")
 
-// ErrImageMissing reports that the image of a sandbox is not in the local image store.
+// ErrImageMissing reports that the image of a sandbox is not in the local image store, and names no
+// registry to be pulled from.
 var ErrImageMissing = errors.New("sandbox image not found")
 
 // binary is the container CLI, looked up on the PATH.
@@ -33,14 +34,35 @@ type Engine struct {
 
 // Preflight verifies what Run needs before anything else is spent on a sandbox: it returns
 // ErrNotInstalled when the container CLI is not on the PATH, ErrImageMissing when image is not in
-// the local store, and nil otherwise. An empty image is the default one, as Run reads it.
-func Preflight(ctx context.Context, image string) error {
+// the local store and names no registry, the failure of the pull when it names one and the pull
+// fails, any other failure to ask the store, and nil otherwise. An empty image is the default one,
+// as Run reads it. The progress of a pull goes to the engine's Stdout.
+func (e *Engine) Preflight(ctx context.Context, image string) error {
 	image = cmp.Or(image, Image)
 	bin, err := lookPath()
 	if err != nil {
 		return err
 	}
-	return checkImage(ctx, bin, image)
+	// Only an absence is worth a pull: a store that cannot answer, or a ctx already cancelled,
+	// would fail the pull too and bury the cause under its message.
+	if err := checkImage(ctx, bin, image); !errors.Is(err, ErrImageMissing) || !namesRegistry(image) {
+		return err
+	}
+	return e.pull(ctx, bin, image)
+}
+
+// pull brings image into the local store from the registry it names, the progress of container on
+// the engine's streams. Container run would pull it itself, but after the repository was fetched
+// and without a word on why it takes long.
+func (e *Engine) pull(ctx context.Context, bin string, image string) error {
+	code, err := e.exec(ctx, bin, []string{"image", "pull", "--", image})
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("pull %s: %s exited %d", image, binary, code)
+	}
+	return nil
 }
 
 // Run launches the sandbox described by spec, its stderr attached to the engine's, and returns once
@@ -92,21 +114,32 @@ func lookPath() (string, error) {
 	return bin, nil
 }
 
-// checkImage fails before container run would: without image in the local store, run queries
-// docker.io and fails with an authentication error that says nothing about the cause. The build
-// hint names the directory of the default image, the only one cove knows.
+// imageNotFound is what container image inspect says of an image absent from the local store
+// (measured on 1.3.1). Its exit code is 1 whatever the failure, so the message is the only thing
+// that tells an absence from a store that cannot answer.
+const imageNotFound = "image not found"
+
+// checkImage returns ErrImageMissing when image is not in the local store, before container run
+// would look for it on docker.io and fail with an authentication error that says nothing about the
+// cause, and any other failure of the inspect as it is. The build hint names the directory of the
+// default image, the only one cove knows.
 func checkImage(ctx context.Context, bin string, image string) error {
 	var stderr strings.Builder
 	//nolint:gosec // G204: bin comes from LookPath and image from the caller, behind --.
 	cmd := exec.CommandContext(ctx, bin, "image", "inspect", "--", image)
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		dir := "<the directory of its Dockerfile>"
-		if image == Image {
-			dir = "images/sandbox"
-		}
-		return fmt.Errorf("%w: %s (build it with: container build --platform linux/arm64 -t %s %s): %w",
-			ErrImageMissing, strings.TrimSpace(stderr.String()), image, dir, err)
+	err := cmd.Run()
+	if err == nil {
+		return nil
 	}
-	return nil
+	message := strings.TrimSpace(stderr.String())
+	if !strings.Contains(message, imageNotFound) {
+		return fmt.Errorf("inspect %s: %s: %w", image, message, err)
+	}
+	dir := "<the directory of its Dockerfile>"
+	if image == Image {
+		dir = "images/sandbox"
+	}
+	return fmt.Errorf("%w: %s (build it with: container build --platform linux/arm64 -t %s %s): %w",
+		ErrImageMissing, message, image, dir, err)
 }
