@@ -3,6 +3,46 @@
 A log, newest first. Each entry says what was decided, why, and what was
 rejected.
 
+## 2026-09-13: image profiles, named at `run`
+
+**Decided.** `run --image` names the image of the VM, `cove-sandbox:local` by
+default; nothing is remembered between runs, by VM or by repository, and the
+repository declares nothing (target, 2.6). The preflight checks the image asked
+for, before anything is spent: a name without a registry (`demo`,
+`cove-sandbox:local`) is never looked for on the internet and must be in the
+local store, one that names its registry (`ghcr.io/...`, `localhost:5000/...`)
+is pulled when absent. Once the VM runs and before the repository enters it,
+`claude --version` is the one check of the image, and a VM that fails it is
+removed. A profile must keep the agent, `/work` as the working directory, the
+first launch state of the agent in its home, and no command launched by
+default; nothing else is verified. `images/go` is the maintained profile, Go
+and golangci-lint pinned to the versions of the workstation, whose only
+commitment is that cove builds, lints and tests in it.
+
+**Why.** The base image carries no runtime: on a Go repository the agent reads
+but can neither build nor test, so it cannot meet the definition of done of the
+project. The rule of docker tells a registry from a bare name, and
+`container run` on a bare name absent from the store queries docker.io and
+fails 401 without saying why. The agent is checked in the VM that was created
+rather than in a throwaway one: a boot costs 3 to 5 s, the abort path of the
+seeding already exists, and a wrong image is the exception. The profile is not
+a barrier because what the agent installs disappears with the VM; it pins what
+the definition of done needs.
+
+**Rejected.** A memory of the image per VM or per repository (the caller
+declares); a check of the other profile rules (it would test the Dockerfile
+against itself, as the verification script of the base image did); a version in
+the tag of the profile (the build command would change at every bump); a
+profile that repeats the pinning and bump procedure of the base image (cove
+building and testing in it stands in for a verification). Accepted limitation:
+the base image still runs the agent as uid 1000 without sudo (entry of
+2026-09-07), so a profile installs its tools as root and restores the user.
+
+**In the contract.** The image of a run is the caller's declaration, whole,
+and `list` shows the one actually used. The rules of a profile replace "uid
+1000" and "nothing in the home": the user describes the base image, and the
+home must keep the first launch state, not stay empty.
+
 ## 2026-09-12: what this base drops from the previous framing
 
 The previous design documents were organised around one VMM and a merge

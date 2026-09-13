@@ -129,11 +129,22 @@ rejected.
    Claude Code version so that the build command in `AGENTS.md` does not
    change at every bump; the version is exposed by `claude --version` and by
    the `org.opencontainers.image.version` label.
-7. **Extension point (not implemented).** A project image starts with
-   `FROM cove-sandbox:local`, switches to `USER root` to add its toolchain,
-   switches back to `USER agent`, adds nothing to `/home/agent`, keeps `/work`
-   as the working directory, and passes the acceptance commands above. Go for
-   cove itself and Node for a JavaScript repository are the first candidates.
+7. **Extension point.** A profile is an image built on this one, named at
+   `run` with `--image`, that adds what the definition of done of a project
+   needs (its runtime, its package manager, its linters), pinned. It is not a
+   barrier: the agent installs what it wants during the run, and that
+   disappears with the VM. A profile must keep the **agent**, the only
+   program cove starts in the VM and the one thing `run` checks (a VM whose
+   image does not answer `claude --version` is removed); **`/work` as the
+   working directory**, where the repository is put; **the first launch state
+   of the agent** in its home, without which the first turn goes into dialogs
+   instead of answering; and **no command launched by default**, since cove
+   passes the whole command at start. Nothing else is controlled: the other
+   rules are documented, and the user of this image is not one of them, it
+   describes this image. A name without a registry (`cove-go:local`) is never
+   pulled: a profile is built on every host, after this image.
+   [images/go](../go/README.md) is the maintained example, Go and
+   golangci-lint for cove itself.
 8. **Common tools in the base.** Besides `git`, the base ships `curl`, `jq`,
    `patch`, `procps` and `python3`. They are not needed to run Claude Code;
    they are what the model reaches for on its own, measured on the owner's
