@@ -6,11 +6,13 @@ Go based command-line tool that runs a coding agent unsupervised in a micro-VM.
 
 Load only the guidance relevant to the task:
 
-| Scope                       | Guidance                                |
-|-----------------------------|-----------------------------------------|
-| Go / Golang guidelines      | [GO.md](.ai/GO.md)                      |
-| Tests                       | [TESTING.md](.ai/TESTING.md)            |
-| Commits, branches and MRs   | [CONTRIBUTING.md](CONTRIBUTING.md)      |
+| Scope                       | Guidance                                      |
+|-----------------------------|-----------------------------------------------|
+| Go / Golang guidelines      | [GO.md](.ai/GO.md)                            |
+| Tests                       | [TESTING.md](.ai/TESTING.md)                  |
+| The need and the target     | [need-and-target.md](docs/need-and-target.md) |
+| What was decided, and why   | [decisions.md](docs/decisions.md)             |
+| Commits, branches and MRs   | [CONTRIBUTING.md](CONTRIBUTING.md)            |
 
 ## Commands
 

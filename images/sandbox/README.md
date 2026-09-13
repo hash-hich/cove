@@ -2,7 +2,8 @@
 
 Base OCI image booted by the cove micro-VM (Apple `container`, the backend of the workstation).
 It contains Claude Code, git, and the minimum needed to run them, and nothing
-from the host. This file is the detailed spec of the image.
+from the host. The decisions below are summarised in the image entry of
+[docs/decisions.md](../../docs/decisions.md); this file is the detailed spec.
 
 ## Build
 

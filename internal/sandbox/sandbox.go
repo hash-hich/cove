@@ -68,7 +68,7 @@ type Spec struct {
 // orphans an exec session leaves behind are reparented to it and stay zombies unless it reaps
 // them. The init forwards signals and reaps; sleep infinity, which GNU sleep accepts because it
 // parses its argument as a float, is the placeholder child until cove has a process of its own in
-// the VM.
+// the VM. Observations and rationale: docs/decisions.md, the entries of 2026-09-08 and 2026-09-07.
 //
 // The array is where the contract holds: no volume, no mount, no user override, no working directory,
 // no SSH agent, no network option can come from a Spec (README of the image).

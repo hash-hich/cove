@@ -1,7 +1,7 @@
 # Base image of the cove sandbox: Claude Code, git, and nothing else.
-# Rationale and limitations: README.md next to this file. Only linux/arm64
-# is built (Apple Silicon host): the checksum below is the one of the
-# linux-arm64 binary.
+# Rationale and limitations: README.md next to this file, and the image
+# entry of docs/decisions.md. Only linux/arm64 is built (Apple Silicon
+# host): the checksum below is the one of the linux-arm64 binary.
 
 # Everything downloaded during the build is pinned here, so that a clean
 # checkout rebuilds the same content. Bumping any of these values is the
