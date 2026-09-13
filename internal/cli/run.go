@@ -119,8 +119,8 @@ func fetch(ctx context.Context, a *App, opts RunOptions) (string, *receiver.Repo
 	return branch, repo, 0
 }
 
-// launch creates the VM through engine and seeds it, and returns its name, or the exit code of the
-// failure it reported.
+// launch creates the VM through engine, checks that it carries the agent and seeds it, and returns
+// its name, or the exit code of the failure it reported.
 func launch(ctx context.Context, a *App, engine *sandbox.Engine, opts RunOptions, repo *receiver.Repo) (string, int) {
 	// The creation itself is never interrupted. A signal to the container CLI leaves the VM it was
 	// starting behind, and the name that CLI prints when it is done is the only handle on
@@ -136,6 +136,11 @@ func launch(ctx context.Context, a *App, engine *sandbox.Engine, opts RunOptions
 	}
 	if ctx.Err() != nil {
 		return "", fail(ctx, a, abort(ctx, engine, name, errors.New("the sandbox was removed")))
+	}
+	// The image is checked once the VM runs rather than in a VM of its own beforehand: a boot costs
+	// 3 to 5 s, the abort path exists anyway, and a wrong image is the exception.
+	if err := engine.CheckAgent(ctx, name); err != nil {
+		return "", fail(ctx, a, abort(ctx, engine, name, fmt.Errorf("%s: %w", opts.Spec.Image, err)))
 	}
 	spec := sandbox.SeedSpec{Target: name, Branch: opts.Spec.Branch, Author: agentAuthor, Email: agentEmail}
 	if err := seed(ctx, engine, repo, spec); err != nil {
@@ -264,7 +269,8 @@ once `+sandbox.Work+` is ready. Every instruction to the agent is a separate com
 The image is `+sandbox.Image+`, built from images/sandbox, unless --image names
 another one, such as a profile built on it (images/go). A name that carries no
 registry is never pulled: the image must be in the local store. One that names
-its registry is pulled from it when absent.
+its registry is pulled from it when absent. A sandbox whose image does not
+carry the agent is removed.
 
 Options:
   -b, --branch string   Branch to start from; the default branch of the repository otherwise
