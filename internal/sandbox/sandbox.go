@@ -2,6 +2,7 @@
 package sandbox
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"strconv"
@@ -11,7 +12,8 @@ import (
 // ErrBranchLabel reports a branch that cannot be the label of a VM.
 var ErrBranchLabel = errors.New("cannot label the branch")
 
-// Image is the sandbox image, built from images/sandbox and stored locally only.
+// Image is the default sandbox image, built from images/sandbox and stored locally only. A profile
+// built on it (images/go) is named at run instead.
 const Image = "cove-sandbox:local"
 
 // LabelKey and LabelValue mark the VMs cove launched, so that cove can tell them apart from the
@@ -41,9 +43,10 @@ func CheckBranch(branch string) error {
 	return nil
 }
 
-// Spec describes a sandbox to launch: the options the user may set on top of the fixed image and
-// process.
+// Spec describes a sandbox to launch: the options the user may set on top of the fixed process.
 type Spec struct {
+	// Image is the image of the VM; empty means Image.
+	Image string
 	// Name is the VM name; empty lets container generate one.
 	Name string
 	// Keep leaves the stopped VM in place instead of removing it.
@@ -71,7 +74,8 @@ type Spec struct {
 // the VM. Observations and rationale: docs/decisions.md, the entries of 2026-09-08 and 2026-09-07.
 //
 // The array is where the contract holds: no volume, no mount, no user override, no working directory,
-// no SSH agent, no network option can come from a Spec (README of the image).
+// no SSH agent, no network option can come from a Spec (README of the image). The image comes after
+// --, since its name is the caller's: one of --volume would otherwise be a flag.
 func (s Spec) Args() []string {
 	args := []string{"run", "-d"}
 	if !s.Keep {
@@ -94,5 +98,5 @@ func (s Spec) Args() []string {
 	for _, env := range s.Env {
 		args = append(args, "-e", env)
 	}
-	return append(args, Image, "sleep", "infinity")
+	return append(args, "--", cmp.Or(s.Image, Image), "sleep", "infinity")
 }

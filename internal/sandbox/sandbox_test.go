@@ -21,23 +21,28 @@ func TestSpecArgs(t *testing.T) {
 		{
 			name: "minimal",
 			spec: sandbox.Spec{},
-			want: "run -d --rm --init --label cove=sandbox cove-sandbox:local sleep infinity",
+			want: "run -d --rm --init --label cove=sandbox -- cove-sandbox:local sleep infinity",
 		},
 		{
 			name: "all options",
 			spec: sandbox.Spec{Name: "demo", CPUs: 2, Memory: "4G", Env: []string{"FOO=bar", "TERM"}},
 			want: "run -d --rm --init --name demo --label cove=sandbox" +
-				" --cpus 2 --memory 4G -e FOO=bar -e TERM cove-sandbox:local sleep infinity",
+				" --cpus 2 --memory 4G -e FOO=bar -e TERM -- cove-sandbox:local sleep infinity",
 		},
 		{
 			name: "keep",
 			spec: sandbox.Spec{Keep: true},
-			want: "run -d --init --label cove=sandbox cove-sandbox:local sleep infinity",
+			want: "run -d --init --label cove=sandbox -- cove-sandbox:local sleep infinity",
 		},
 		{
 			name: "branch",
 			spec: sandbox.Spec{Branch: "main"},
-			want: "run -d --rm --init --label cove=sandbox --label cove.branch=main cove-sandbox:local sleep infinity",
+			want: "run -d --rm --init --label cove=sandbox --label cove.branch=main -- cove-sandbox:local sleep infinity",
+		},
+		{
+			name: "image",
+			spec: sandbox.Spec{Image: "cove-go:local"},
+			want: "run -d --rm --init --label cove=sandbox -- cove-go:local sleep infinity",
 		},
 	}
 
@@ -64,6 +69,7 @@ func TestSpecArgsNeverMountsOrOverridesUser(t *testing.T) {
 	t.Parallel()
 
 	spec := sandbox.Spec{
+		Image:  "--volume",
 		Name:   "-v",
 		Keep:   true,
 		CPUs:   1,
@@ -73,11 +79,13 @@ func TestSpecArgsNeverMountsOrOverridesUser(t *testing.T) {
 	}
 	args := spec.Args()
 
-	image := slices.Index(args, sandbox.Image)
-	require.Positive(t, image)
-	require.Equal(t, []string{"sleep", "infinity"}, args[image+1:])
+	// The image and the process come last, behind the -- that ends the flags of container.
+	const tail = 4
+	require.GreaterOrEqual(t, len(args), tail)
+	image := len(args) - tail
+	require.Equal(t, []string{"--", spec.Image, "sleep", "infinity"}, args[image:])
 
-	// Every flag before the image is one cove emits itself; a valued flag consumes the next token.
+	// Every flag before the -- is one cove emits itself; a valued flag consumes the next token.
 	bare := strings.Fields("run -d --rm --init")
 	valued := strings.Fields("--name --label --cpus --memory -e")
 	for i := 0; i < image; i++ {

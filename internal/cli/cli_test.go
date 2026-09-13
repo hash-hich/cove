@@ -29,6 +29,8 @@ const (
 	// repo and fix are the repository and the branch the run tests name.
 	repo = "https://forge.example/group/repo.git"
 	fix  = "fix"
+	// goImage is the profile the run tests name.
+	goImage = "cove-go:local"
 )
 
 // runArgs prefixes args with the run command.
@@ -66,6 +68,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "run docker session flags", args: runArgs("-it", repo), wantStderr: "not defined: -it"},
 		{name: "run rm and keep", args: runArgs("--rm", "--keep", repo), wantStderr: "mutually exclusive"},
 		{name: "run bad cpus", args: runArgs("--cpus", "x", repo), wantStderr: "invalid value"},
+		{name: "run empty image", args: runArgs("--image", "", repo), wantStderr: "--image must name an image"},
 		{name: "run negative cpus", args: runArgs("--cpus", "-1", repo), wantStderr: "must be positive"},
 		{name: "run no url", args: runArgs(), wantStderr: "requires 1 argument"},
 		{name: "run branch with =", args: runArgs("-b", "x=1", repo), wantStderr: "cannot label the branch"},
@@ -150,27 +153,35 @@ func TestRunHelp(t *testing.T) {
 func TestParseRun(t *testing.T) {
 	t.Parallel()
 
+	// base is what run parses when no flag is given: the default image and nothing else.
+	base := sandbox.Spec{Image: sandbox.Image}
 	tests := []struct {
 		name string
 		args []string
 		want cli.RunOptions
 	}{
-		{name: "url only", args: []string{repo}, want: cli.RunOptions{URL: repo}},
-		{name: "rm is the default", args: []string{"--rm", repo}, want: cli.RunOptions{URL: repo}},
+		{name: "url only", args: []string{repo}, want: cli.RunOptions{Spec: base, URL: repo}},
+		{name: "rm is the default", args: []string{"--rm", repo}, want: cli.RunOptions{Spec: base, URL: repo}},
 		{
 			name: "every flag",
 			args: []string{
-				"-b", fix, "--name", demo, "--keep", "--cpus", "2", "-m", "4G", "-e", "FOO=bar", "-e", "TERM", repo,
+				"-b", fix, "--name", demo, "--image", goImage, "--keep", "--cpus", "2", "-m", "4G",
+				"-e", "FOO=bar", "-e", "TERM", repo,
 			},
 			want: cli.RunOptions{
-				Spec: sandbox.Spec{Name: demo, Keep: true, CPUs: 2, Memory: "4G", Env: []string{"FOO=bar", "TERM"}, Branch: fix},
-				URL:  repo,
+				Spec: sandbox.Spec{
+					Image: goImage, Name: demo, Keep: true, CPUs: 2, Memory: "4G", Env: []string{"FOO=bar", "TERM"}, Branch: fix,
+				},
+				URL: repo,
 			},
 		},
 		{
 			name: longForms,
-			args: []string{"--branch=fix", "--memory=4G", "--env=BAR=baz", repo},
-			want: cli.RunOptions{Spec: sandbox.Spec{Memory: "4G", Env: []string{"BAR=baz"}, Branch: fix}, URL: repo},
+			args: []string{"--branch=fix", "--image=" + goImage, "--memory=4G", "--env=BAR=baz", repo},
+			want: cli.RunOptions{
+				Spec: sandbox.Spec{Image: goImage, Memory: "4G", Env: []string{"BAR=baz"}, Branch: fix},
+				URL:  repo,
+			},
 		},
 	}
 
