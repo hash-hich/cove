@@ -12,7 +12,8 @@ import (
 // ErrNotInstalled reports that the container CLI could not be found.
 var ErrNotInstalled = errors.New("container CLI not found")
 
-// ErrImageMissing reports that the image of a sandbox is not in the local image store.
+// ErrImageMissing reports that the image of a sandbox is not in the local image store, and names no
+// registry to be pulled from.
 var ErrImageMissing = errors.New("sandbox image not found")
 
 // binary is the container CLI, looked up on the PATH.
@@ -32,13 +33,31 @@ type Engine struct {
 
 // Preflight verifies what Run needs before anything else is spent on a sandbox: it returns
 // ErrNotInstalled when the container CLI is not on the PATH, ErrImageMissing when image is not in
-// the local store, and nil otherwise.
-func Preflight(ctx context.Context, image string) error {
+// the local store and names no registry, the failure of the pull when it names one and the pull
+// fails, and nil otherwise. The progress of a pull goes to the engine's Stdout.
+func (e *Engine) Preflight(ctx context.Context, image string) error {
 	bin, err := lookPath()
 	if err != nil {
 		return err
 	}
-	return checkImage(ctx, bin, image)
+	if err := checkImage(ctx, bin, image); err == nil || !namesRegistry(image) {
+		return err
+	}
+	return e.pull(ctx, bin, image)
+}
+
+// pull brings image into the local store from the registry it names, the progress of container on
+// the engine's streams. Container run would pull it itself, but after the repository was fetched
+// and without a word on why it takes long.
+func (e *Engine) pull(ctx context.Context, bin string, image string) error {
+	code, err := e.exec(ctx, bin, []string{"image", "pull", "--", image})
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("pull %s: %s exited %d", image, binary, code)
+	}
+	return nil
 }
 
 // Run launches the sandbox described by spec, its stderr attached to the engine's, and returns once
@@ -90,9 +109,9 @@ func lookPath() (string, error) {
 	return bin, nil
 }
 
-// checkImage fails before container run would: without image in the local store, run queries
-// docker.io and fails with an authentication error that says nothing about the cause. The build
-// hint names the directory of the default image, the only one cove knows.
+// checkImage returns ErrImageMissing when image is not in the local store, before container run
+// would look for it on docker.io and fail with an authentication error that says nothing about the
+// cause. The build hint names the directory of the default image, the only one cove knows.
 func checkImage(ctx context.Context, bin string, image string) error {
 	var stderr strings.Builder
 	//nolint:gosec // G204: bin comes from LookPath and image from the caller, behind --.

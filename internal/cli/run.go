@@ -81,7 +81,10 @@ func runCommand(a *App, args []string) int {
 // failure there leaves nothing (H4), and a VM whose seeding failed is deleted before returning:
 // without its repository it is not a sandbox to inspect, --keep or not.
 func create(ctx context.Context, a *App, opts RunOptions) (string, int) {
-	if err := sandbox.Preflight(ctx, opts.Spec.Image); err != nil {
+	// Both streams go to stderr: the stdout of run is the name of the VM and nothing else, and a
+	// pull or a delete on the way would print there too.
+	engine := &sandbox.Engine{Stdout: a.Stderr, Stderr: a.Stderr}
+	if err := engine.Preflight(ctx, opts.Spec.Image); err != nil {
 		return "", fail(ctx, a, err)
 	}
 	branch, repo, code := fetch(ctx, a, opts)
@@ -90,7 +93,7 @@ func create(ctx context.Context, a *App, opts RunOptions) (string, int) {
 	}
 	defer func() { _ = repo.Close() }()
 	opts.Spec.Branch = branch
-	return launch(ctx, a, opts, repo)
+	return launch(ctx, a, engine, opts, repo)
 }
 
 // fetch brings the repository of opts into a receiver and returns it with the branch to start
@@ -116,12 +119,9 @@ func fetch(ctx context.Context, a *App, opts RunOptions) (string, *receiver.Repo
 	return branch, repo, 0
 }
 
-// launch creates the VM and seeds it, and returns its name, or the exit code of the failure it
-// reported.
-func launch(ctx context.Context, a *App, opts RunOptions, repo *receiver.Repo) (string, int) {
-	// Both streams go to stderr: the stdout of run is the name of the VM and nothing else, and a
-	// delete on the way back would print it too.
-	engine := &sandbox.Engine{Stdout: a.Stderr, Stderr: a.Stderr}
+// launch creates the VM through engine and seeds it, and returns its name, or the exit code of the
+// failure it reported.
+func launch(ctx context.Context, a *App, engine *sandbox.Engine, opts RunOptions, repo *receiver.Repo) (string, int) {
 	// The creation itself is never interrupted. A signal to the container CLI leaves the VM it was
 	// starting behind, and the name that CLI prints when it is done is the only handle on
 	// that VM: without it a signal here would leave a micro-VM running with nobody able to name it.
@@ -262,8 +262,9 @@ this machine already has, which does not enter the VM. Prints the name of the VM
 once `+sandbox.Work+` is ready. Every instruction to the agent is a separate command.
 
 The image is `+sandbox.Image+`, built from images/sandbox, unless --image names
-another one, such as a profile built on it (images/go). It must be in the
-local store.
+another one, such as a profile built on it (images/go). A name that carries no
+registry is never pulled: the image must be in the local store. One that names
+its registry is pulled from it when absent.
 
 Options:
   -b, --branch string   Branch to start from; the default branch of the repository otherwise
