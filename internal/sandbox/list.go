@@ -10,7 +10,7 @@ import (
 
 // VM is what cove reads of a container list entry: enough to tell its sandboxes from the other
 // VMs of the store, and the cells container list shows for them. The rest of the entry, which
-// carries the whole configuration of the VM, is not parsed (D10).
+// carries the whole configuration of the VM, is not parsed.
 type VM struct {
 	// ID is the VM identifier, the name given at run or the one container generated.
 	ID string

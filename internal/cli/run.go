@@ -16,11 +16,11 @@ import (
 )
 
 // ExitPreflight is the exit code when cove itself could not run container, as the 125 of docker
-// run; container never returns it (every failure of its CLI is 1, D10).
+// run; container never returns it (every failure of its CLI is 1).
 const ExitPreflight = 125
 
 // The identity the agent commits under, written to the repository of the sandbox. The domain is
-// reserved by RFC 2606: never resolved, never a mailbox. Nothing of the owner enters the VM (D3),
+// reserved by RFC 2606: never resolved, never a mailbox. Nothing of the owner enters the VM,
 // and what matters is what cove pushes and the owner reviews.
 const (
 	agentAuthor = "agent"
@@ -60,7 +60,7 @@ func runCommand(a *App, args []string) int {
 
 	// A signal during the creation aborts it and removes what it made, the receiver and the VM if
 	// it exists: a sandbox without its repository is not one to keep. Once run has returned, a
-	// signal to cove no longer concerns the VM (D10); stopping it is an explicit verb.
+	// signal to cove no longer concerns the VM; stopping it is an explicit verb.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	// Once the first signal has started the teardown, the next one gets its default effect again:
@@ -123,7 +123,7 @@ func launch(ctx context.Context, a *App, opts RunOptions, repo *receiver.Repo) (
 	// delete on the way back would print it too.
 	engine := &sandbox.Engine{Stdout: a.Stderr, Stderr: a.Stderr}
 	// The creation itself is never interrupted. A signal to the container CLI leaves the VM it was
-	// starting behind (D10), and the name that CLI prints when it is done is the only handle on
+	// starting behind, and the name that CLI prints when it is done is the only handle on
 	// that VM: without it a signal here would leave a micro-VM running with nobody able to name it.
 	// The signal is honoured as soon as the name is known, and a second one gets its default effect
 	// for whoever will not wait.

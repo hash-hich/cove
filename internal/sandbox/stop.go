@@ -8,7 +8,7 @@ import (
 // StopSpec describes a stop: the VMs to stop and the options the user may set. The targets must
 // already be screened (Screen or Running): container stop takes any ID and stops it.
 type StopSpec struct {
-	// Targets are the IDs to stop, resolved by container: an exact name, never a prefix (D10).
+	// Targets are the IDs to stop, resolved by container: an exact name, never a prefix.
 	Targets []string
 	// Signal is the signal to send; empty leaves the container default.
 	Signal string

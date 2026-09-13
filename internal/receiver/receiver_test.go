@@ -218,7 +218,7 @@ func TestBundleAndClose(t *testing.T) {
 	}
 }
 
-// TestFetchRefusesAnObjectGitCloneWouldAccept: validating the objects on entry is cove's (S20),
+// TestFetchRefusesAnObjectGitCloneWouldAccept: validating the objects on entry is cove's,
 // not a default of git, so the failure has to say so. The malformed commit here, an author line
 // with no space before the email, is one a plain clone takes without a word.
 func TestFetchRefusesAnObjectGitCloneWouldAccept(t *testing.T) {

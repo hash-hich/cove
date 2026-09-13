@@ -11,7 +11,7 @@ import (
 // ErrBranchLabel reports a branch that cannot be the label of a VM.
 var ErrBranchLabel = errors.New("cannot label the branch")
 
-// Image is the sandbox image, built from images/sandbox and stored locally only (D9).
+// Image is the sandbox image, built from images/sandbox and stored locally only.
 const Image = "cove-sandbox:local"
 
 // LabelKey and LabelValue mark the VMs cove launched, so that cove can tell them apart from the
@@ -28,7 +28,7 @@ const Label = LabelKey + "=" + LabelValue
 
 // BranchLabelKey is the label that carries the branch the agent starts from, and where its work
 // is expected back: written by cove on the host at run, never by the agent, so that the retrieval
-// can trust it (R8). The URL is not labelled: it may carry a credential (R2).
+// can trust it. The URL is not labelled: it may carry a credential.
 const BranchLabelKey = "cove.branch"
 
 // CheckBranch returns ErrBranchLabel when branch cannot be the value of BranchLabelKey: container
@@ -68,9 +68,9 @@ type Spec struct {
 // orphans an exec session leaves behind are reparented to it and stay zombies unless it reaps
 // them. The init forwards signals and reaps; sleep infinity, which GNU sleep accepts because it
 // parses its argument as a float, is the placeholder child until cove has a process of its own in
-// the VM. Observations and rationale: docs/cadrage/07-implementation.md, Pilotage.
+// the VM.
 //
-// The array is where R1 and R2 hold: no volume, no mount, no user override, no working directory,
+// The array is where the contract holds: no volume, no mount, no user override, no working directory,
 // no SSH agent, no network option can come from a Spec (README of the image).
 func (s Spec) Args() []string {
 	args := []string{"run", "-d"}

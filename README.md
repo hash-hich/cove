@@ -119,10 +119,3 @@ and the prompt reach `claude`: cove builds the argument array itself. Like
 `container exec`, which refuses it. Exit code: the one of `container exec`,
 which carries the one of `claude`; 1 when the target is refused; 2 on a usage
 error; 125 when cove could not run `container`.
-
-## Design notes
-
-The scoping documents — threat model, adversary model, surfaces, requirements —
-live alongside the code, split into short files under
-[docs/cadrage/](docs/cadrage/README.md). *(Written in French for now.)*
-

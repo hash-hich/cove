@@ -10,7 +10,6 @@ Load only the guidance relevant to the task:
 |-----------------------------|-----------------------------------------|
 | Go / Golang guidelines      | [GO.md](.ai/GO.md)                      |
 | Tests                       | [TESTING.md](.ai/TESTING.md)            |
-| Design and rationale        | [docs/cadrage](docs/cadrage/README.md)  |
 | Commits, branches and MRs   | [CONTRIBUTING.md](CONTRIBUTING.md)      |
 
 ## Commands

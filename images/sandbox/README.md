@@ -1,10 +1,8 @@
 # Sandbox image
 
-Base OCI image booted by the cove micro-VM (Apple `container`, decision D6).
+Base OCI image booted by the cove micro-VM (Apple `container`, the backend of the workstation).
 It contains Claude Code, git, and the minimum needed to run them, and nothing
-from the host. The decisions below are recorded as D9 in
-[docs/cadrage/06-decisions.md](../../docs/cadrage/06-decisions.md); this file
-is the detailed spec.
+from the host. This file is the detailed spec of the image.
 
 ## Build
 
@@ -19,8 +17,8 @@ alone.
 
 ## Why there is no verification script
 
-The guarantees the image gives (R1, R2) are structural (P2): the Dockerfile
-copies nothing from the host, sets a non-root user, puts nothing in the home
+The guarantees the image gives are structural, absence rather than
+prohibition: the Dockerfile copies nothing from the host, sets a non-root user, puts nothing in the home
 but Claude Code's first launch state and carries no credential. Nothing
 checks that better than reading its hundred lines, and the build already
 fails when the pinned checksum does not match.
@@ -28,9 +26,9 @@ Claude Code itself refuses to start in bypass mode as root, so the user
 choice is enforced at every run without a script. A verification script was
 written for this issue and removed on purpose: every check it ran tested the
 Dockerfile against itself, and its lists of paths and patterns were the kind
-of list P2 warns about.
+of list that goes stale unnoticed.
 
-What can still defeat R1 and R2 is not the image but the way it is started:
+What can still let the host in is not the image but the way it is started:
 `container run` accepts `--volume`, `-e` and `-u`. Those flags live in the
 argument array cove will build, and that array is where a test belongs: a Go
 unit test asserting that no mount, no environment variable and no user
@@ -50,9 +48,8 @@ container run --rm cove-sandbox:local stat -c '%U %a' /home/agent/.claude.json  
 ```
 
 Then the first launch, which no static check covers because the keys of
-`claude.json` are undocumented (decision 10). On a fresh sandbox created by
-cove with a credential passed at launch (a stopgap until the broker, D1, and
-not the interface: it is deliberately absent from the usage of `cove run`):
+`claude.json` are undocumented. On a fresh sandbox created by cove, with the
+credential the agent needs:
 
 ```bash
 cove run --name t9 -e CLAUDE_CODE_OAUTH_TOKEN=...
@@ -115,12 +112,12 @@ rejected.
    `$HOME` is `/home/agent` and is created by hand (`useradd --no-create-home`,
    then `install -d`): no `.bashrc`, no `.profile`, nothing that sources
    anything. The repository lives at `/work`, outside `$HOME`, so that `$HOME`
-   only ever contains what the image puts there (decision 10) and what Claude
+   only ever contains what the image puts there and what Claude
    Code writes during the run. `HOME` is set explicitly in the image rather
    than left to the guest init.
 5. **Deliberately absent.** No credentials, no host path, no shell profile,
    no apt lists, no package cache, no `~/.claude` directory, `~/.ssh`,
-   `~/.aws`, no `/Users`. R1 holds by absence (P2): these paths do not exist,
+   `~/.aws`, no `/Users`. The rule holds by absence: these paths do not exist,
    they are not merely forbidden (`ls` says "No such file or directory", not
    "Permission denied"). No `ENTRYPOINT`, so a derived
    image never has to undo one; the default command is the base image's
@@ -162,7 +159,7 @@ rejected.
     after a real launch is cache, telemetry or version bookkeeping that Claude
     Code rewrites on its own; the pinned version is not repeated in it so that
     the Dockerfile stays the only place where it is set. The login is not
-    covered: it is the credential's job (D1), and the approval Claude Code
+    covered: it is the proxy's job, and the approval Claude Code
     asks for an API key is stored keyed by the key itself, so it cannot be
     preset. The state lives in the image rather than being written by cove at
     `run`: it depends on the Claude Code version pinned here, not on the cove

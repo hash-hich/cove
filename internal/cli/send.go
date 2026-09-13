@@ -63,7 +63,7 @@ func sendCommand(a *App, args []string) int {
 }
 
 // announced reports whether the thread of spec is to be announced: a terminal is about to be
-// attached, on a sandbox that runs, from a terminal (container exec -t needs one, D10). An
+// attached, on a sandbox that runs, from a terminal (container exec -t needs one). An
 // identifier for a thread that never opened would be resumed in vain.
 func announced(a *App, spec sandbox.SendSpec, vms []sandbox.VM) bool {
 	return spec.Prompt == "" && slices.Contains(sandbox.Running(vms), spec.Target) && terminal(a.Stdin)

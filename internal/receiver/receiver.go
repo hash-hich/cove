@@ -1,6 +1,6 @@
 // Package receiver fetches a forge repository on the host, with the access its owner already has,
 // into a bare repository that nothing of the forge configures, and hands it over as a bundle. It is
-// the receiver of R8, on the way into the sandbox.
+// the receiver on the way into the sandbox.
 package receiver
 
 import (
@@ -27,7 +27,7 @@ var ErrNotInstalled = errors.New("git not found")
 var ErrNoDefaultBranch = errors.New("no default branch")
 
 // fsckHint explains a fetch that git itself would have accepted. Validating the objects on entry
-// is cove's requirement (S20), not a default of git, and git names neither who asked for the check
+// is cove's requirement, not a default of git, and git names neither who asked for the check
 // nor the fact that a plain clone would have passed. Old histories really do carry such objects:
 // an author line without a space before the email, or an impossible time zone, both refused
 // (measured). There is no flag to skip the check on purpose: it guards what enters the host.
@@ -55,13 +55,13 @@ type Repo struct {
 }
 
 // refspecs are what enters a receiver: the branches and the tags, under their own names. Nothing
-// else of the forge does: refs/replace/ (S26), refs/notes/, refs/merge-requests/ and refs/pull/
+// else of the forge does: refs/replace/, refs/notes/, refs/merge-requests/ and refs/pull/
 // stay behind, which neither --mirror nor refs/* would leave.
 var refspecs = []string{"+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"}
 
 // options returns the settings every git command of cove carries on its argv, never in a file of
-// the repository (R6, D4): git itself refuses a local path or a file:// URL (H1), every object that
-// enters is validated (S20), submodules are left alone (S27, H5), and the hooks are those of the
+// the repository: git itself refuses a local path or a file:// URL (H1), every object that
+// enters is validated, submodules are left alone (H5), and the hooks are those of the
 // directory hooks, kept empty. The last one matters: a core.hooksPath of the owner runs their
 // reference-transaction hook on every ref the fetch writes, and an init.templateDir of theirs
 // installs live hooks in the receiver (measured); both are silenced this way. An empty hooks
@@ -144,7 +144,7 @@ func parseResolve(out string) (string, error) {
 }
 
 // Fetch creates a receiver and fetches url into it: every branch and tag, the whole history, never
-// shallow (D2), and fails before any download when the forge does not have branch. The receiver is
+// shallow, and fails before any download when the forge does not have branch. The receiver is
 // a temporary directory of the host, gone at Close, and gone already when Fetch fails. It returns
 // ErrNotInstalled or the failure of git, whose message is on Stderr: an unknown host, an
 // unreachable repository, an access refused, an unknown branch.
@@ -233,7 +233,7 @@ func (g *Git) stream(ctx context.Context, args []string, said *transcript) error
 }
 
 // transcript keeps the beginning of what a command said, to look for a marker in it afterwards. It
-// is bounded because the output is the repository's and may be long (R4, S24); a marker of git
+// is bounded because the output is the repository's and may be long; a marker of git
 // comes with the first errors.
 type transcript struct {
 	said []byte
@@ -315,7 +315,7 @@ var redirected = []string{
 }
 
 // env is the environment of every git command of cove: the one of the process without what would
-// move the receiver elsewhere, and with the replace refs ignored (S26, R8) whatever a repository or
+// move the receiver elsewhere, and with the replace refs ignored whatever a repository or
 // a configuration says.
 func env() []string {
 	from := os.Environ()

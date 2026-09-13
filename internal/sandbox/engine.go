@@ -91,7 +91,7 @@ func lookPath() (string, error) {
 }
 
 // checkImage fails before container run would: without the image in the local store, run queries
-// docker.io and fails with an authentication error that says nothing about the cause (D10).
+// docker.io and fails with an authentication error that says nothing about the cause.
 func checkImage(ctx context.Context, bin string) error {
 	var stderr strings.Builder
 	cmd := exec.CommandContext(ctx, bin, "image", "inspect", Image)

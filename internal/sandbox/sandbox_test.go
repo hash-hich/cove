@@ -58,7 +58,7 @@ func TestCheckBranch(t *testing.T) {
 }
 
 // TestSpecArgsNeverMountsOrOverridesUser is the test the image README asks for: what can defeat
-// R1 and R2 is not the image but the way it is started, so no Spec, however hostile, may produce
+// the contract is not the image but the way it is started, so no Spec, however hostile, may produce
 // a mount, a user override, a working directory, a host credential or a network option.
 func TestSpecArgsNeverMountsOrOverridesUser(t *testing.T) {
 	t.Parallel()

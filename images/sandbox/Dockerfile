@@ -1,7 +1,7 @@
 # Base image of the cove sandbox: Claude Code, git, and nothing else.
-# Rationale and limitations: README.md next to this file, and decision D9
-# in docs/cadrage/06-decisions.md. Only linux/arm64 is built (Apple Silicon
-# host, D6): the checksum below is the one of the linux-arm64 binary.
+# Rationale and limitations: README.md next to this file. Only linux/arm64
+# is built (Apple Silicon host): the checksum below is the one of the
+# linux-arm64 binary.
 
 # Everything downloaded during the build is pinned here, so that a clean
 # checkout rebuilds the same content. Bumping any of these values is the
@@ -58,8 +58,8 @@ COPY --from=download /claude /usr/local/bin/claude
 
 # Claude Code refuses to bypass permissions when running as root, so the agent
 # runs as a dedicated user. The home directory is created by hand, not by
-# useradd, which would copy /etc/skel (.bashrc, .profile): R1 wants nothing
-# from the host in $HOME, only what this Dockerfile and the run write. /work is
+# useradd, which would copy /etc/skel (.bashrc, .profile): nothing of the host
+# enters $HOME, only what this Dockerfile and the run write. /work is
 # where the repository will live; it is created here, owned by the user,
 # because WORKDIR would create it owned by root and git would refuse the
 # directory.

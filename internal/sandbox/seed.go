@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Work is the directory of the repository in the sandbox, owned by the user of the image (D9).
+// Work is the directory of the repository in the sandbox, owned by the user of the image.
 const Work = "/work"
 
 // bundlePath is where the bundle lands in the VM for the time of the fetch. It doubles the disk
@@ -25,7 +25,7 @@ type SeedSpec struct {
 	// Branch is the branch the agent starts on; it must be in the bundle.
 	Branch string
 	// Author and Email are the identity written to the config of the repository: without one git
-	// refuses to commit at all. They live in Work, not in the image nor in $HOME (D9).
+	// refuses to commit at all. They live in Work, not in the image nor in $HOME.
 	Author string
 	Email  string
 }
@@ -39,15 +39,14 @@ type Step struct {
 }
 
 // Steps returns the container execs that seed Work, in order, each a fixed program with fixed
-// arguments: no shell and no user override, the exec runs as the user of the image (uid 1000,
-// D10).
+// arguments: no shell and no user override, the exec runs as the user of the image (uid 1000).
 //
 // The repository is initialized on Branch, so HEAD names it, unborn, before the fetch; the fetch
 // refuses to write the branch HEAD names, even unborn, unless --update-head-ok (measured), and it
 // leaves the index and the tree empty, which reset --hard fills from HEAD, the documented meaning
 // of the verb. The identity refspecs copy every branch and tag under its own name: the repository
 // is new, nothing is there to collide with. Nothing sets a remote: a push fails for lack of a
-// destination, without asking for a credential (R2).
+// destination, without asking for a credential.
 func (s SeedSpec) Steps() []Step {
 	git := []string{execVerb, s.Target, "git", "-C", Work}
 	return []Step{

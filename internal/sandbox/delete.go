@@ -6,7 +6,7 @@ import (
 )
 
 // deleteArgs returns the container delete argument array that removes target, running or not.
-// --force is what makes a running VM go: container refuses it otherwise (D10).
+// --force is what makes a running VM go: container refuses it otherwise.
 func deleteArgs(target string) []string {
 	return []string{"delete", "--force", target}
 }
