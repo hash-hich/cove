@@ -262,7 +262,8 @@ this machine already has, which does not enter the VM. Prints the name of the VM
 once `+sandbox.Work+` is ready. Every instruction to the agent is a separate command.
 
 The image is `+sandbox.Image+`, built from images/sandbox, unless --image names
-another one, such as a profile built on it. It must be in the local store.
+another one, such as a profile built on it (images/go). It must be in the
+local store.
 
 Options:
   -b, --branch string   Branch to start from; the default branch of the repository otherwise
