@@ -68,11 +68,12 @@ RUN groupadd --gid 1000 agent \
     && install -d -m 0755 -o agent -g agent /home/agent /work
 
 # The only file in $HOME: the state Claude Code writes after its first launch
-# (onboarding done, /work trusted), so that a fresh sandbox answers the first
-# turn instead of asking. No credential and no version in it; the keys are
-# undocumented and measured on the pinned version, so the first launch is
-# replayed by hand at every bump (README.md). Mode 0600 is what claude gives
-# the file when it writes it itself.
+# (onboarding done, /work trusted, the disclaimer of the bypass permissions
+# mode accepted), so that a fresh sandbox answers the first turn instead of
+# asking. No credential and no version in it; the keys are undocumented and
+# measured on the pinned version, so the first launch is replayed by hand at
+# every bump (README.md). Mode 0600 is what claude gives the file when it
+# writes it itself.
 COPY --chown=agent:agent --chmod=0600 claude.json /home/agent/.claude.json
 
 # HOME is set explicitly rather than derived from /etc/passwd by the runtime,

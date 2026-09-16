@@ -54,7 +54,7 @@ credential the agent needs:
 
 ```bash
 cove run --name t9 -e CLAUDE_CODE_OAUTH_TOKEN=...
-cove send t9                 # the prompt, with no theme, login or trust dialog before it
+cove send t9                 # the prompt, with no theme, login, trust or bypass permissions dialog before it
 cove send t9 "Answer ok"     # JSON carrying a model answer, no setup or login error
 cove stop t9
 ```
@@ -163,11 +163,15 @@ rejected.
    while the agent keeps the autonomy to do and not only to see.
 10. **First launch state.** On its first launch in an empty home, Claude Code
     asks for a theme, a login and whether to trust `/work`, and remembers the
-    answers in `~/.claude.json`. A cove sandbox must answer its first turn
-    instead, so the image copies `claude.json` from this directory to
-    `/home/agent/.claude.json` with the two keys that carry those answers,
-    measured on the pinned version: `hasCompletedOnboarding` and
-    `projects["/work"].hasTrustDialogAccepted`. Everything else the file holds
+    answers in `~/.claude.json`. Started in bypass permissions mode, as cove
+    starts it, it also shows a disclaimer to accept once before the prompt,
+    in the attached regime only (print mode shows no dialog and bypasses
+    without one). A cove sandbox must answer its first turn instead, so the
+    image copies `claude.json` from this directory to
+    `/home/agent/.claude.json` with the three keys that carry those answers,
+    measured on the pinned version: `hasCompletedOnboarding`,
+    `projects["/work"].hasTrustDialogAccepted` and
+    `bypassPermissionsModeAccepted`. Everything else the file holds
     after a real launch is cache, telemetry or version bookkeeping that Claude
     Code rewrites on its own; the pinned version is not repeated in it so that
     the Dockerfile stays the only place where it is set. The login is not
