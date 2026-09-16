@@ -25,8 +25,8 @@ Run once when the Dockerfile changes, and paste the output in the MR:
 ```bash
 container run --rm cove-go:local go version              # the pinned version
 container run --rm cove-go:local golangci-lint version   # the pinned version
-container run --rm cove-go:local id -u                   # 1000, as the base image
-container run --rm cove-go:local ls -A /home/agent       # .claude.json only
+container run --rm cove-go:local id -u                   # 0, as the base image
+container run --rm cove-go:local ls -A /root             # .claude.json only
 ```
 
 Then the commitment itself, on a sandbox created by cove from the cove
@@ -70,14 +70,13 @@ state, `/work`, no entrypoint.
 4. **A download stage.** The archives are fetched and unpacked in a stage of
    their own and only the two tools are copied over, so that neither the
    archives nor the apt state of the base image change in the profile.
-5. **Root for the copy, the agent user afterwards.** The base image runs as
-   its agent user without sudo and `/usr/local` is root's, so the tools land
-   as root and `USER agent` is restored before the end. Nothing else of the
+5. **No user switch.** The base image runs as root, so the tools land under
+   `/usr/local` with no `USER` line to add or to restore. Nothing else of the
    base image is touched, which is how the profile keeps the rules of the
    extension point without repeating them.
 6. **Caches under `$HOME` at run time.** `go` and `golangci-lint` write their
-   caches under `/home/agent/.cache`, the module cache under `/home/agent/go`
-   and their configuration under `/home/agent/.config` during the run
+   caches under `/root/.cache`, the module cache under `/root/go` and their
+   configuration under `/root/.config` during the run
    (measured: those three next to `.claude.json` after the acceptance). The
    home is no longer required to hold the first launch state alone: what a
    profile must not do is break that state, and a cache next to it does not.

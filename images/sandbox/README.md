@@ -19,12 +19,10 @@ alone.
 ## Why there is no verification script
 
 The guarantees the image gives are structural, absence rather than
-prohibition: the Dockerfile copies nothing from the host, sets a non-root user, puts nothing in the home
-but Claude Code's first launch state and carries no credential. Nothing
+prohibition: the Dockerfile copies nothing from the host, puts nothing in the
+home but Claude Code's first launch state and carries no credential. Nothing
 checks that better than reading its hundred lines, and the build already
-fails when the pinned checksum does not match.
-Claude Code itself refuses to start in bypass mode as root, so the user
-choice is enforced at every run without a script. A verification script was
+fails when the pinned checksum does not match. A verification script was
 written for this issue and removed on purpose: every check it ran tested the
 Dockerfile against itself, and its lists of paths and patterns were the kind
 of list that goes stale unnoticed.
@@ -41,11 +39,12 @@ Run once when the Dockerfile changes, and paste the output in the MR:
 
 ```bash
 container run --rm cove-sandbox:local claude --version   # the pinned version
-container run --rm cove-sandbox:local id -u              # 1000, not 0
+container run --rm cove-sandbox:local id -u              # 0: the agent is root
 container run --rm cove-sandbox:local git --version
-container run --rm cove-sandbox:local env                # PATH, HOME, DISABLE_UPDATES only
-container run --rm cove-sandbox:local ls -A /home/agent  # .claude.json only
-container run --rm cove-sandbox:local stat -c '%U %a' /home/agent/.claude.json   # agent 600
+container run --rm cove-sandbox:local env                # PATH, HOME, IS_SANDBOX, DISABLE_UPDATES only
+container run --rm cove-sandbox:local ls -A /root        # .claude.json only
+container run --rm cove-sandbox:local stat -c '%U %a' /root/.claude.json   # root 600
+container run --rm cove-sandbox:local claude --dangerously-skip-permissions --print --output-format json -- ok   # JSON with is_error (no credential), not the refusal as root
 ```
 
 Then the first launch, which no static check covers because the keys of
@@ -60,7 +59,8 @@ cove stop t9
 ```
 
 A dialog showing up here means the pinned version reads other keys than the
-ones `claude.json` carries.
+ones `claude.json` carries. The refusal as root showing up, in the driven line
+above or here, means it reads another variable than `IS_SANDBOX`.
 
 ## What the image contains
 
@@ -69,16 +69,15 @@ ones `claude.json` carries.
 | Base | `debian:trixie-slim`, linux/arm64, pinned by index digest |
 | Claude Code | native binary, exact version and SHA256 pinned in the Dockerfile, at `/usr/local/bin/claude` |
 | Packages added | `git`, `ca-certificates`, and the tools the model reaches for: `curl`, `jq`, `patch`, `procps`, `python3` (no recommends, apt lists removed) |
-| User | `agent`, uid 1000, gid 1000, shell `/bin/bash` |
-| `$HOME` | `/home/agent`, holding only `.claude.json`, the first launch state of Claude Code |
-| Working directory | `/work`, owned by `agent`, where the repository will live |
-| Environment | `HOME=/home/agent`, `DISABLE_UPDATES=1` |
+| User | `root`, no dedicated user |
+| `$HOME` | `/root`, holding only `.claude.json`, the first launch state of Claude Code; the `.bashrc` and `.profile` of the base image are removed |
+| Working directory | `/work`, owned by root, where the repository will live |
+| Environment | `HOME=/root`, `IS_SANDBOX=1`, `DISABLE_UPDATES=1` |
 | Entrypoint | none; the default command is the base image's `bash`, cove passes the command at run time |
 
-`agent`, `/home/agent` and `/work` are the contract for the repository
-transport issue: the repository is placed under `/work`, owned by uid 1000
-(git refuses a directory owned by another user), and Claude Code is started
-with `/work` as its working directory.
+`/root` and `/work` are the contract for the repository transport: the
+repository is placed under `/work`, owned by root like the exec that fetches
+it, and Claude Code is started with `/work` as its working directory.
 
 ## Decisions
 
@@ -107,15 +106,32 @@ rejected.
    updater nor `claude update` can replace the pinned version at run time.
    The apt packages (`git`, `ca-certificates`) are the one thing that is not
    pinned: see Limitations.
-4. **User and paths.** A non-root user because Claude Code refuses
-   `--dangerously-skip-permissions` as root. Name `agent`, uid and gid 1000 so
-   that files handed to the VM by the host side map to a predictable id.
-   `$HOME` is `/home/agent` and is created by hand (`useradd --no-create-home`,
-   then `install -d`): no `.bashrc`, no `.profile`, nothing that sources
-   anything. The repository lives at `/work`, outside `$HOME`, so that `$HOME`
-   only ever contains what the image puts there and what Claude
-   Code writes during the run. `HOME` is set explicitly in the image rather
-   than left to the guest init.
+4. **Root, and the paths.** The agent runs as root, with no dedicated user
+   and no sudo to reach it. The boundary is the hypervisor, not the VM: what
+   is granted inside never crosses it, and hardening the inside adds no
+   security, only friction against the legitimate destruction the target
+   asks for (need and target, objective 2 and 2.3). Nothing the agent would
+   break in the VM belongs to anyone, and Docker Sandboxes runs its agent as
+   root for the same reason. Claude Code refuses
+   `--dangerously-skip-permissions` as root unless `IS_SANDBOX` is `1` in
+   its environment, measured on the pinned version: the check in the binary
+   is uid 0 and the variable not `1`; without it the flag exits 1 with
+   "cannot be used with root/sudo privileges", with it a driven turn returns
+   its JSON. The image sets the variable. `$HOME` is `/root`, the one of the
+   base image, emptied of the `.bashrc` and `.profile` that base-files puts
+   there: nothing that sources anything. The repository lives at `/work`,
+   outside `$HOME`, so that `$HOME` only ever contains what the image puts
+   there and what Claude Code writes during the run. `HOME` is set
+   explicitly in the image rather than left to the guest init. Rejected: the
+   dedicated user at uid 1000 the image first had, which was never a
+   confinement choice but a workaround of that refusal, and cost the agent
+   every package install, every Docker daemon and every global
+   configuration; the same user with sudo, which keeps the refusal under
+   `sudo claude` and leaves the agent one more thing to remember;
+   `CLAUDE_CODE_BUBBLEWRAP`, the other variable that lifts the check, which
+   names a sandbox mechanism the image does not have; a user override on
+   `container exec` by cove, since cove passes no user and the state of the
+   home follows the version pinned here, not the version of cove.
 5. **Deliberately absent.** No credentials, no host path, no shell profile,
    no apt lists, no package cache, no `~/.claude` directory, `~/.ssh`,
    `~/.aws`, no `/Users`. The rule holds by absence: these paths do not exist,
@@ -154,13 +170,15 @@ rejected.
    second, leaner image, because no use case works better with less; and
    runtimes or linters in the base, which depend on the project and belong to
    the profile layer.
-9. **Installation rule.** No sudo and no setuid helper. What the harness
-   provides is what the project's definition of done needs (the runtime, its
-   package manager, the linters), pinned in a profile layer. Everything else
-   the agent installs in user space at run time (`go install`, `pip --user`,
-   a binary under `/work`), with network access, and it disappears with the
-   VM. The image that runs is thus always the one the Dockerfile describes,
-   while the agent keeps the autonomy to do and not only to see.
+9. **Installation rule.** What the harness provides is what the project's
+   definition of done needs (the runtime, its package manager, the linters),
+   pinned in a profile layer, so that every run starts from what the
+   Dockerfile describes. Everything else the agent installs itself at run
+   time, as root, `apt-get` included, with network access, and it disappears
+   with the VM: what a run changes belongs to that run. Rejected: the
+   previous rule, everything in user space (`go install`, `pip --user`, a
+   binary under `/work`), which only restated the uid 1000 workaround as a
+   doctrine and froze the agent in a read-only posture towards the system.
 10. **First launch state.** On its first launch in an empty home, Claude Code
     asks for a theme, a login and whether to trust `/work`, and remembers the
     answers in `~/.claude.json`. Started in bypass permissions mode, as cove
@@ -168,7 +186,7 @@ rejected.
     in the attached regime only (print mode shows no dialog and bypasses
     without one). A cove sandbox must answer its first turn instead, so the
     image copies `claude.json` from this directory to
-    `/home/agent/.claude.json` with the three keys that carry those answers,
+    `/root/.claude.json` with the three keys that carry those answers,
     measured on the pinned version: `hasCompletedOnboarding`,
     `projects["/work"].hasTrustDialogAccepted` and
     `bypassPermissionsModeAccepted`. Everything else the file holds
@@ -218,7 +236,11 @@ rejected.
 5. Rebuild and run the acceptance commands, first launch included. A dialog
    showing up means the new version reads other keys than the ones in
    `claude.json`: measure what it writes after a real first launch, and
-   update `claude.json` in the same commit as the bump.
+   update `claude.json` in the same commit as the bump. The refusal as root
+   coming back means the new version reads another variable than
+   `IS_SANDBOX`, or another value: `grep -a 'root/sudo'` on the binary shows
+   the condition next to the message; update the `ENV` line in the same
+   commit.
 
 ## Limitations
 
@@ -237,6 +259,12 @@ rejected.
 - **The tool list is a starting point.** It comes from one owner's usage
   history; the rule is to start restrictive and add a tool to the base only
   when real runs show it missing in every project.
+- **`IS_SANDBOX` is undocumented.** The variable and its check come from
+  reading the binary of the pinned version, like the keys of the first launch
+  state, and the acceptance runs the flag as root at every bump for that
+  reason. The binary reads the variable in other places (its retry on an
+  overloaded API, its detection of a sandbox runtime), whose effects were not
+  measured.
 - **The first launch state is a snapshot.** Its keys are undocumented and
   can change with the pinned version; the only guard is the first launch
   replayed in the acceptance. Runtime dependencies beyond starting the binary

@@ -15,14 +15,12 @@ ARG GOLANGCI_LINT_SHA256=a2a4e0065aa41be71f7c5ac90f271b61751331e5d04314e62afe402
 
 # Stage 1: download and verify. The base image already carries curl and
 # ca-certificates; a separate stage keeps the archives out of the layers of
-# the profile. Root, because the base image runs as its agent user and
-# /usr/local is not its.
+# the profile.
 FROM cove-sandbox:local AS download
 ARG GO_VERSION
 ARG GO_SHA256
 ARG GOLANGCI_LINT_VERSION
 ARG GOLANGCI_LINT_SHA256
-USER root
 RUN curl -fsSL -o /go.tgz "https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz" \
     && echo "${GO_SHA256}  /go.tgz" | sha256sum -c - \
     && tar -C /usr/local -xzf /go.tgz \
@@ -36,13 +34,11 @@ RUN curl -fsSL -o /golangci-lint.tgz \
 
 # Stage 2: the profile. Only the two tools cross over; the agent, its first
 # launch state, /work and the absence of an entrypoint are inherited from the
-# base image untouched. The tools land as root, since the base image has no
-# sudo, and the user of the base image is restored before the end.
+# base image untouched. The base image runs as root, so the tools land under
+# /usr/local with no user switch.
 FROM cove-sandbox:local
-USER root
 COPY --from=download /usr/local/go /usr/local/go
 COPY --from=download /golangci-lint /usr/local/bin/golangci-lint
-USER agent
 
 # GOTOOLCHAIN=local holds go to the version pinned above, as DISABLE_UPDATES
 # holds claude to its own: a go.mod asking for a newer Go fails with a clear

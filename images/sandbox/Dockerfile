@@ -56,16 +56,13 @@ RUN apt-get update \
 
 COPY --from=download /claude /usr/local/bin/claude
 
-# Claude Code refuses to bypass permissions when running as root, so the agent
-# runs as a dedicated user. The home directory is created by hand, not by
-# useradd, which would copy /etc/skel (.bashrc, .profile): nothing of the host
-# enters $HOME, only what this Dockerfile and the run write. /work is
-# where the repository will live; it is created here, owned by the user,
-# because WORKDIR would create it owned by root and git would refuse the
-# directory.
-RUN groupadd --gid 1000 agent \
-    && useradd --uid 1000 --gid agent --shell /bin/bash --no-create-home agent \
-    && install -d -m 0755 -o agent -g agent /home/agent /work
+# The agent is root, with no dedicated user: the boundary is the hypervisor,
+# nothing inside the VM belongs to anyone, and a lesser user would only keep
+# the agent from installing a package, running Docker or touching the system
+# configuration (README.md, decision 4). $HOME is the /root of the base image,
+# emptied of the shell profiles base-files puts there: nothing of the host
+# enters $HOME, only what this Dockerfile and the run write.
+RUN rm /root/.bashrc /root/.profile
 
 # The only file in $HOME: the state Claude Code writes after its first launch
 # (onboarding done, /work trusted, the disclaimer of the bypass permissions
@@ -74,27 +71,28 @@ RUN groupadd --gid 1000 agent \
 # measured on the pinned version, so the first launch is replayed by hand at
 # every bump (README.md). Mode 0600 is what claude gives the file when it
 # writes it itself.
-COPY --chown=agent:agent --chmod=0600 claude.json /home/agent/.claude.json
+COPY --chmod=0600 claude.json /root/.claude.json
 
 # HOME is set explicitly rather than derived from /etc/passwd by the runtime,
 # because claude writes its state under $HOME and the guest init must not be
-# trusted to compute it. DISABLE_UPDATES blocks background and manual updates
-# so that the version pinned above is the one that runs.
-ENV HOME=/home/agent \
+# trusted to compute it. IS_SANDBOX=1 is what lifts the refusal of
+# --dangerously-skip-permissions as root: measured on the pinned version, the
+# check is uid 0 and IS_SANDBOX not "1", and the variable is undocumented, so
+# the acceptance re-runs the flag as root at every bump (README.md).
+# DISABLE_UPDATES blocks background and manual updates so that the version
+# pinned above is the one that runs.
+ENV HOME=/root \
+    IS_SANDBOX=1 \
     DISABLE_UPDATES=1
 
 LABEL org.opencontainers.image.title="cove sandbox" \
       org.opencontainers.image.description="Claude Code and git for the cove micro-VM" \
       org.opencontainers.image.version="${CLAUDE_CODE_VERSION}"
 
-USER agent
+# /work is where the repository will live, created here owned by root like
+# the exec that fetches it and the agent that works in it.
 WORKDIR /work
 
-# No sudo and no setuid helper: the agent installs what it wants in user
-# space (go install, pip --user, a binary under /work) but cannot change the
-# system packages, so the image that runs stays the one the Dockerfile
-# describes.
-#
 # No ENTRYPOINT: cove passes the whole command at run time, and a derived
 # project image must not have to undo one. The default command stays the
 # base image's bash, which is only what an interactive shell gets.
