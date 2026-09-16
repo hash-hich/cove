@@ -3,6 +3,38 @@
 A log, newest first. Each entry says what was decided, why, and what was
 rejected.
 
+## 2026-09-13: the agent runs without permission prompts
+
+**Decided.** `send` starts `claude` with `--dangerously-skip-permissions`, in
+both regimes, attached terminal included; no option of `send` and no setting
+of the sandbox brings the prompts back. The disclaimer Claude Code shows once
+before starting in that mode is answered by the first launch state of the
+image (`bypassPermissionsModeAccepted` in `claude.json`), next to the
+onboarding and the trust of `/work`.
+
+**Why.** The sandbox is the boundary: a prompt inside it protects nothing the
+VM does not already contain, and costs the run. Without the flag the README
+promise was broken in both regimes. Driven, print mode never waits for an
+answer: it denies the tool and goes on, so a turn that had to write a file or
+run a command failed without anyone being asked. Attached, the human was asked
+at every edit and command, the permission fatigue the target rules out first.
+Docker Sandboxes (`sbx run claude` is `claude --dangerously-skip-permissions`)
+and yoloAI do the same, with no opt-out documented.
+
+**Rejected.** Prompts kept in the attached regime, as if a human watching made
+them useful (the boundary is the same in both regimes, and the attached
+terminal is the same sandbox); an option of `send` to keep them (a caller who
+wants prompts wants a workstation, not a sandbox); cove detecting an image
+that runs the agent as root (Claude Code refuses the flag as root and says so,
+and cove lets that refusal pass as it lets every refusal of `container exec`).
+
+**In the contract.** Uid 1000 is the one condition Claude Code puts on the
+flag, and the question of the agent as root stays open. The prompts bypass
+mode does not remove (`ask` rules, deletion of critical paths) stay with the
+agent: driven, it denies them and the turn continues. `--permission-prompts
+none` (2.1.259 and later) treats those residual prompts as an unsupervised
+turn would: to consider at the next bump of the image.
+
 ## 2026-09-13: image profiles, named at `run`
 
 **Decided.** `run --image` names the image of the VM, `cove-sandbox:local` by
