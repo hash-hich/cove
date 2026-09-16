@@ -33,11 +33,18 @@ type SendSpec struct {
 
 // Args returns the container exec argument array for s.
 //
-// Cove owns the argv of the agent: the thread flags and the prompt are all that reach claude, so
-// that the output contract below holds whatever the caller typed. Two regimes share the verb. With
-// a prompt, claude runs in print mode and its JSON reaches stdout untouched; cove never parses it,
-// and never promises its schema. Without one, the exec gets a TTY and the REPL of the agent is
-// attached to the terminal of the caller, escape sequences included.
+// Cove owns the argv of the agent: the permission mode, the thread flags and the prompt are all
+// that reach claude, so that the output contract below holds whatever the caller typed. Two regimes
+// share the verb. With a prompt, claude runs in print mode and its JSON reaches stdout untouched;
+// cove never parses it, and never promises its schema. Without one, the exec gets a TTY and the
+// REPL of the agent is attached to the terminal of the caller, escape sequences included.
+//
+// The agent runs in bypass permissions mode in both regimes, and nothing lets a caller keep the
+// prompts: the sandbox is the boundary, and a prompt inside it protects nothing. Without the flag,
+// print mode never waits for an answer, it denies the tool and goes on, which is what a driven
+// turn hit; attached, the human is asked at every edit and command. Claude Code refuses the flag
+// as root, which the image's uid 1000 agent satisfies; the disclaimer it shows once in the attached
+// regime is answered by the first launch state of the image.
 //
 // The identity of the thread is always cove's: the UUID it drew (--session-id) or the one the
 // caller resumes (--resume, which claude resolves from a UUID as from a display name). Cove keeps
@@ -51,7 +58,7 @@ func (s SendSpec) Args() []string {
 	if s.Prompt == "" {
 		args = append(args, "--interactive", "--tty")
 	}
-	args = append(args, s.Target, agent)
+	args = append(args, s.Target, agent, "--dangerously-skip-permissions")
 	switch {
 	case s.Continue:
 		args = append(args, "--continue")

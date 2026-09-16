@@ -30,42 +30,46 @@ func TestSendSpecArgs(t *testing.T) {
 		{
 			name: "driven turn",
 			spec: sandbox.SendSpec{Target: demo, Prompt: "fix the build", Thread: thread},
-			want: "exec " + demo + " claude --session-id " + thread + " --print --output-format json --",
+			want: "exec " + demo + " claude --dangerously-skip-permissions --session-id " + thread +
+				" --print --output-format json --",
 		},
 		{
 			name: "a prompt that starts with a dash",
 			spec: sandbox.SendSpec{Target: demo, Prompt: "--version", Thread: thread},
-			want: "exec " + demo + " claude --session-id " + thread + " --print --output-format json --",
+			want: "exec " + demo + " claude --dangerously-skip-permissions --session-id " + thread +
+				" --print --output-format json --",
 		},
 		{
 			name: "attached terminal",
 			spec: sandbox.SendSpec{Target: demo, Thread: thread},
-			want: "exec --interactive --tty " + demo + " claude --session-id " + thread,
+			want: "exec --interactive --tty " + demo + " claude --dangerously-skip-permissions --session-id " + thread,
 		},
 		{
 			name: "resumed by UUID",
 			spec: sandbox.SendSpec{Target: demo, Prompt: "go on", Thread: thread, Resume: true},
-			want: "exec " + demo + " claude --resume " + thread + " --print --output-format json --",
+			want: "exec " + demo + " claude --dangerously-skip-permissions --resume " + thread +
+				" --print --output-format json --",
 		},
 		{
 			name: "resumed by display name, attached",
 			spec: sandbox.SendSpec{Target: demo, Thread: review, Resume: true},
-			want: "exec --interactive --tty " + demo + " claude --resume review",
+			want: "exec --interactive --tty " + demo + " claude --dangerously-skip-permissions --resume review",
 		},
 		{
 			name: "named thread",
 			spec: sandbox.SendSpec{Target: demo, Prompt: "hi", Thread: thread, Name: review},
-			want: "exec " + demo + " claude --session-id " + thread + " --name review --print --output-format json --",
+			want: "exec " + demo + " claude --dangerously-skip-permissions --session-id " + thread +
+				" --name review --print --output-format json --",
 		},
 		{
 			name: "continued, attached",
 			spec: sandbox.SendSpec{Target: demo, Continue: true},
-			want: "exec --interactive --tty " + demo + " claude --continue",
+			want: "exec --interactive --tty " + demo + " claude --dangerously-skip-permissions --continue",
 		},
 		{
 			name: "continued and named",
 			spec: sandbox.SendSpec{Target: demo, Continue: true, Name: review},
-			want: "exec --interactive --tty " + demo + " claude --continue --name review",
+			want: "exec --interactive --tty " + demo + " claude --dangerously-skip-permissions --continue --name review",
 		},
 	}
 

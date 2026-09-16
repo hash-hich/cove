@@ -159,7 +159,8 @@ func printSendUsage(w io.Writer) {
 Talk to the agent of a sandbox, given by name or ID. With a prompt, the agent
 runs that one turn and the JSON it answers is copied to stdout as it comes.
 Without one, a terminal is attached to the agent and the conversation lives in
-its REPL until it is left.
+its REPL until it is left. In both cases the agent asks for no permission: the
+sandbox is the boundary, and nothing brings the prompts back.
 
 Each send opens a new thread unless --resume or --continue picks one up. A
 sandbox carries as many threads as it is sent, all sharing its files, and cove
