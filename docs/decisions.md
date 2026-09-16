@@ -28,8 +28,9 @@ wants prompts wants a workstation, not a sandbox); cove detecting an image
 that runs the agent as root (Claude Code refuses the flag as root and says so,
 and cove lets that refusal pass as it lets every refusal of `container exec`).
 
-**In the contract.** Uid 1000 is the one condition Claude Code puts on the
-flag, and the question of the agent as root stays open. The prompts bypass
+**In the contract.** Not being root outside a declared sandbox is the one
+condition Claude Code puts on the flag; the image meets it as root since the
+amendment of the entry of 2026-09-07. The prompts bypass
 mode does not remove (`ask` rules, deletion of critical paths) stay with the
 agent: driven, it denies them and the turn continues. `--permission-prompts
 none` (2.1.259 and later) treats those residual prompts as an unsupervised
@@ -66,13 +67,14 @@ declares); a check of the other profile rules (it would test the Dockerfile
 against itself, as the verification script of the base image did); a version in
 the tag of the profile (the build command would change at every bump); a
 profile that repeats the pinning and bump procedure of the base image (cove
-building and testing in it stands in for a verification). Accepted limitation:
-the base image still runs the agent as uid 1000 without sudo (entry of
-2026-09-07), so a profile installs its tools as root and restores the user.
+building and testing in it stands in for a verification). The limitation
+accepted then, the agent as uid 1000 without sudo so that a profile had to
+install its tools as root and restore the user, is lifted by the amendment of
+the entry of 2026-09-07.
 
 **In the contract.** The image of a run is the caller's declaration, whole,
-and `list` shows the one actually used. The rules of a profile replace "uid
-1000" and "nothing in the home": the user describes the base image, and the
+and `list` shows the one actually used. The rules of a profile replace "the
+user of the base image" and "nothing in the home": the user describes the base image, and the
 home must keep the first launch state, not stay empty.
 
 ## 2026-09-12: what this base drops from the previous framing
@@ -204,20 +206,36 @@ secret, and everything it returns is untrusted.
 **Decided.** Debian trixie slim pinned by index digest, the native Claude Code
 binary pinned by exact version and SHA256 with updates disabled, `git` and the
 tools the model reaches for on its own (`curl`, `jq`, `patch`, `procps`,
-`python3`), a dedicated user `agent` (uid 1000) with a home holding only the
-first-launch state of Claude Code, the repository at `/work`, no sudo, no
-entrypoint, built locally as `cove-sandbox:local`. The detailed spec, the
-acceptance and the bump procedure are in [images/sandbox/README.md](../images/sandbox/README.md).
+`python3`), the agent as root with `/root` holding only the first-launch
+state of Claude Code, the repository at `/work`, no entrypoint, built locally
+as `cove-sandbox:local`. The detailed spec, the acceptance and the bump
+procedure are in [images/sandbox/README.md](../images/sandbox/README.md).
 
 **Why.** The image is the declared context: what it pins is what runs, and
-what the host would leak is absent rather than forbidden. Claude Code refuses
-its unsupervised mode as root. A missing tool costs context and sometimes the
-run, more than a few tens of megabytes.
+what the host would leak is absent rather than forbidden. A missing tool costs
+context and sometimes the run, more than a few tens of megabytes.
+
+**Amended 2026-09-16: root instead of uid 1000.** The image first ran the
+agent as a dedicated user, uid 1000 without sudo, and its installation rule
+(everything in user space) followed from it. That user was never a
+confinement choice but a workaround: Claude Code refuses its unsupervised
+mode as root. The price was paid on legitimate destruction (need, objective
+2): the agent could not install a package, recreate a test database, run
+Docker or touch the global configuration, a read-only posture while nothing
+it would break in the VM belongs to anyone. The boundary is the hypervisor
+(target, 2.3), and Docker Sandboxes runs its agent as root for that reason.
+Measured on the pinned 2.1.236, the refusal is lifted by `IS_SANDBOX=1` in
+the environment, which the image now sets; the seeding and the agent run as
+root, and a profile installs its tools with no user switch.
 
 **Rejected.** Alpine (musl constraints on every layer), the install script and
 the npm package (a launcher under `$HOME`, Node for nothing), a leaner second
 image, a verification script (every check tested the Dockerfile against
-itself). Accepted limitation: apt packages are not pinned.
+itself), uid 1000 kept with sudo (the refusal stays under `sudo claude`, and
+the friction with it), `CLAUDE_CODE_BUBBLEWRAP` as the variable that lifts the
+check (it names a mechanism the image does not have). Accepted limitations:
+apt packages are not pinned; `IS_SANDBOX` is undocumented, so the acceptance
+runs the flag as root at every bump.
 
 **In the contract.** The image is named by digest; a project image extends
 this one with its toolchain.

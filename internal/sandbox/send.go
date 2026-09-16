@@ -43,8 +43,8 @@ type SendSpec struct {
 // prompts: the sandbox is the boundary, and a prompt inside it protects nothing. Without the flag,
 // print mode never waits for an answer, it denies the tool and goes on, which is what a driven
 // turn hit; attached, the human is asked at every edit and command. Claude Code refuses the flag
-// as root, which the image's uid 1000 agent satisfies; the disclaimer it shows once in the attached
-// regime is answered by the first launch state of the image.
+// as root unless the environment of the image declares a sandbox (IS_SANDBOX, set by the image next
+// to the first launch state that answers the disclaimer shown once in the attached regime).
 //
 // The identity of the thread is always cove's: the UUID it drew (--session-id) or the one the
 // caller resumes (--resume, which claude resolves from a UUID as from a display name). Cove keeps

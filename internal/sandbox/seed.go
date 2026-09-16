@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Work is the directory of the repository in the sandbox, owned by the user of the image.
+// Work is the directory of the repository in the sandbox, owned by root like the agent.
 const Work = "/work"
 
 // bundlePath is where the bundle lands in the VM for the time of the fetch. It doubles the disk
@@ -39,7 +39,8 @@ type Step struct {
 }
 
 // Steps returns the container execs that seed Work, in order, each a fixed program with fixed
-// arguments: no shell and no user override, the exec runs as the user of the image (uid 1000).
+// arguments: no shell and no user override, the exec runs as the user of the image, root, like the
+// agent (images/sandbox/README.md).
 //
 // The repository is initialized on Branch, so HEAD names it, unborn, before the fetch; the fetch
 // refuses to write the branch HEAD names, even unborn, unless --update-head-ok (measured), and it

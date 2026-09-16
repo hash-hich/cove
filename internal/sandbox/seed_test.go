@@ -35,7 +35,8 @@ func TestSeedSpecSteps(t *testing.T) {
 }
 
 // TestSeedSpecStepsNeverRunAShellOrAnotherUser: every step is a fixed program of the image run as
-// its user, so no SeedSpec, however hostile, may reach a shell, root, or a working directory.
+// its user, so no SeedSpec, however hostile, may reach a shell, another user, or a working
+// directory.
 func TestSeedSpecStepsNeverRunAShellOrAnotherUser(t *testing.T) {
 	t.Parallel()
 
