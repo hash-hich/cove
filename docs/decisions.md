@@ -3,6 +3,113 @@
 A log, newest first. Each entry says what was decided, why, and what was
 rejected.
 
+## 2026-09-18: dependencies are vendored
+
+**Decided.** `vendor/` is committed. A dependency enters with
+`go get <module>@latest`, and the version that command resolves is what counts
+from then on: pinned in `go.mod`, its sum in `go.sum`, its source under
+`vendor/`, the three changed in the same commit as the code that first imports
+the packages. `go mod vendor` follows every change of `go.mod`; the build reads
+the directory by default once it exists, so nothing else is configured.
+
+**Why.** Every line the binary links can be read in review: a bump of a
+dependency shows as a diff of source, where `go.sum` alone shows a changed
+hash. The build no longer depends on the proxy, so a CI job, a bisect or an
+offline build gives the same binary, and a module withdrawn upstream cannot
+break it. The trust base becomes visible at a glance, and the figure is the
+reference the next addition is measured against, `pull` included: 13 modules,
+63 packages, 723 files, 12 MB on disk; the binary links 9 of the modules, the
+other four (testify, go-cmp, yaml, gotest.tools) serve the tests only.
+
+**Rejected.** `go.sum` alone (integrity, not readability). A vendored slice
+without the modules the tests need (`go mod vendor` does not distinguish, and
+the test dependencies are part of what is read). A tool that audits the module
+graph instead (it reports; the vendored diff is the audit).
+
+**In the contract.** Each dependency is justified in this log, and the count
+above is what a new one is compared to. "Standard library only" is no longer a
+promise of the README; the smallest trust base that does the job is.
+
+## 2026-09-17: `pull` links go-containerregistry
+
+**Decided.** The image pipeline links `github.com/google/go-containerregistry`
+v0.22.1, published 2026-09-04 and still the latest on the proxy on
+2026-09-18: `pkg/name` for the references, `pkg/v1/remote` for the registry,
+`authn.DefaultKeychain` for the credentials the user already has, `pkg/v1`
+and the reading of `pkg/v1/layout` for the store. Later, `mutate.Extract`
+flattens the layers into one tar with the whiteouts applied; the untar into a
+rootfs stays cove's own code, since it is the one step that parses hostile
+data on the host and it is short enough to be read whole.
+
+**Measured** on the same program written twice (parse of a reference,
+platform `linux/arm64`, keychain, pull), compiled with Go 1.26 on macOS 26.5:
+
+- **Trust base.** go-containerregistry brings 9 modules, itself included, and
+  61 non standard packages into the probe. containers/image v5.36.2 brings 54
+  modules and 301 packages, among them `containers/storage`, `docker/docker`,
+  `grpc`, `protobuf`, four `sigstore` modules, `go-jose`, `miekg/pkcs11`,
+  `letsencrypt/boulder`, `mattn/go-sqlite3` and `mpb` for progress bars. The
+  probe binary weighs 10.1 MB against 26.5 MB. The cove binary with `pull`
+  weighs 10.4 MB, and 30 packages of the library are vendored.
+- **cgo.** containers/image does not build as it comes: `proglottis/gpgme`
+  wants the native library, `-tags containers_image_openpgp` removes it, and
+  `mattn/go-sqlite3` stays in the graph for the blob info cache.
+  go-containerregistry builds under `CGO_ENABLED=0` untouched.
+- **Credentials.** `authn.DefaultKeychain` is a cascade, first found served,
+  never a merge: the docker config, `$DOCKER_CONFIG` naming its directory in
+  the place of `~/.docker` when set; else the file `$REGISTRY_AUTH_FILE`
+  names; else `containers/auth.json` under `$XDG_RUNTIME_DIR`, then under
+  `$XDG_CONFIG_HOME` (`~/.config` by default). The credential helpers of the
+  file kept are called through `docker/cli` and `docker-credential-helpers`,
+  the modules podman uses for the same job. Two consequences, verified against
+  a registry served by the tests: a docker config that does not know the
+  registry hides a `containers/auth.json` that does, and a `$DOCKER_CONFIG`
+  pointing at a directory without `config.json` gives an empty configuration
+  even when `~/.docker/config.json` exists.
+- **Retries.** Three attempts, one second then three of wait with 10 % of
+  jitter, on transient network errors and on 408, 429, 499, 500, 502, 503, 504
+  and 522. Kept as they are; the library says nothing by default, so cove
+  writes each new attempt on stderr.
+
+**Why.** containers/image carries the needs of podman: several sources,
+several destinations, a trust policy for an enterprise. Cove pulls one image
+from one registry into a store it reads itself, and 45 extra modules cannot
+be justified by features the target rules out. Integrity does not come from
+the library either way: the manifest is named by its own sha256 and lists the
+sha256 of each layer, and cove verifies both on the way into the store.
+
+**Given up, and what it would cost to get back.**
+
+- **Mirrors of `registries.conf`**, the only real loss: a `[[registry]]`
+  block rewrites the name the user wrote and lists hosts to try in order,
+  which serves a cache in the datacenter and a way around the rate limit of
+  Docker Hub. A table from written name to hosts plus a retry loop, not a
+  reason to link the rest.
+- **Signature verification** by `policy.json`, GPG through `gpgme` or sigstore
+  through Fulcio. It answers "who produced these bytes", a question the target
+  does not ask while an image is pinned by digest and that digest is in the
+  report. The day it is asked, `sigstore-go` alone answers it.
+- **The `containers-storage:` destination**, which keeps the layers separate
+  for the kernel to stack with overlayfs. Cove wants the opposite, one
+  flattened rootfs per digest and a throwaway copy per run, on a host that is
+  macOS first. The other transports are covered: `pkg/v1/layout` is `oci:`,
+  `pkg/v1/tarball` is `docker-archive:`, `pkg/v1/daemon` is `docker-daemon:`.
+
+Two more settings of `registries.conf` are not losses.
+`unqualified-search-registries` would make the origin of an image depend on
+the machine, which the rule on references already refuses. `blocked` is weaker
+than the domain list of the run, which decides the same thing for every
+connection of the VM.
+
+**Rejected.** containers/image, on the count above. `skopeo` or `podman` as a
+subprocess, which breaks the promise of one binary with no other tool to
+install and puts the image policy in a program cove does not ship. The
+`docker` CLI for the same reason, plus a daemon.
+
+**In the contract.** The image of a run is named by digest and that digest is
+in the report; the pull verifies it, and no library choice moves that
+guarantee.
+
 ## 2026-09-13: the agent runs without permission prompts
 
 **Decided.** `send` starts `claude` with `--dangerously-skip-permissions`, in
