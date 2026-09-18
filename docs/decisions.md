@@ -30,6 +30,55 @@ graph instead (it reports; the vendored diff is the audit).
 above is what a new one is compared to. "Standard library only" is no longer a
 promise of the README; the smallest trust base that does the job is.
 
+## 2026-09-18: the image pipeline is its own package, and cove writes the store
+
+**Decided.** `internal/image` holds the rule on references (moved out of
+`sandbox`, which now imports it), the store and the pull. The store is an OCI
+layout at `~/.cache/cove/images`, `$XDG_CACHE_HOME/cove/images` when that
+variable is set; the downloads in progress and the locks live next to it in
+`tmp/`. Cove writes the blobs and `index.json` itself; from the library it
+keeps the format, its reading and the annotation that carries the reference
+(`org.opencontainers.image.ref.name`).
+
+**Why.** One package per concern: `sandbox` drives the container CLI, and
+`pull` talks to a registry and a directory, never to that CLI; a store that
+`run` will read with the embedded backend has no reason to know the CLI
+exists. The rule on references moved because `pull` needs it, it is about
+images, and a rule is stated once. The layout sits under `images/` rather than
+at the root of the cache because the format wants three entries at its root
+and nothing else: `skopeo inspect oci:~/.cache/cove/images:<ref>` reads it as
+it is, `rm -rf` empties it without touching `rootfs/` or `runs/`, and `tmp/`
+outside the layout keeps the same file system for the rename to stay atomic.
+Cove writes the store because the writers of the library, read in v0.22.1,
+do not hold what an unattended cache needs: `layout.WriteBlob` opens
+`blobs/sha256/<hex>` directly, without temporary or rename, and takes a blob
+of any size for valid when the expected size is unknown, so a manifest
+truncated by a `kill -9` would pass every later check; `AppendDescriptor`
+rewrites `index.json` in place and appends a moved tag as a second entry. A
+blob goes through `tmp/<digest>.<pid>`, is hashed on the way and renamed only
+once the hash is its name; the index goes through a temporary, an fsync and a
+rename, one entry per reference. One lock of the system per blob, at a path
+two pulls compute alone, so that they only wait on each other for a layer both
+want at that moment and a base layer shared by two images comes down once; the
+kernel releases it when its holder dies, and the sweep of `tmp/` at start
+follows that lock, not the pid in the name.
+
+**Rejected.** The pull inside `sandbox` (it would tie the store to the
+presence of the container CLI). The writers of the library (above). One lock
+per image (a shared layer would come down twice) and one lock for the store
+(the second pull would wait to the end of the first). A blocking `flock` (the
+runtime restarts it after a signal, and a Ctrl-C must still be answered, so
+the wait polls). Removing lock files in the sweep (a lock removed between the
+look of a sweep and the `flock` of a pull lets two pulls lock two inodes of
+one name). Resuming a download in the middle of a layer (docker does;
+deferred, the granularity stays the layer and the structure of the store does
+not change when it comes).
+
+**In the contract.** `pull` prints the digest of the platform manifest, never
+of an index, and asks the registry on every call, by digest included; `run`
+will start an image named by digest and present in the store without the
+network. The two rules serve the same promise, to say what actually ran.
+
 ## 2026-09-17: `pull` links go-containerregistry
 
 **Decided.** The image pipeline links `github.com/google/go-containerregistry`
