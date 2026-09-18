@@ -154,7 +154,7 @@ func TestParseRun(t *testing.T) {
 	t.Parallel()
 
 	// base is what run parses when no flag is given: the default image and nothing else.
-	base := sandbox.Spec{Image: sandbox.Image}
+	base := sandbox.Spec{Image: sandbox.DefaultImage}
 	tests := []struct {
 		name string
 		args []string

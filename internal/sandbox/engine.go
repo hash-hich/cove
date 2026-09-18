@@ -8,6 +8,8 @@ import (
 	"io"
 	"os/exec"
 	"strings"
+
+	"gitlab.com/hich-hich/cove/internal/image"
 )
 
 // ErrNotInstalled reports that the container CLI could not be found.
@@ -37,30 +39,30 @@ type Engine struct {
 // the local store and names no registry, the failure of the pull when it names one and the pull
 // fails, any other failure to ask the store, and nil otherwise. An empty image is the default one,
 // as Run reads it. The progress of a pull goes to the engine's Stdout.
-func (e *Engine) Preflight(ctx context.Context, image string) error {
-	image = cmp.Or(image, Image)
+func (e *Engine) Preflight(ctx context.Context, img string) error {
+	img = cmp.Or(img, DefaultImage)
 	bin, err := lookPath()
 	if err != nil {
 		return err
 	}
 	// Only an absence is worth a pull: a store that cannot answer, or a ctx already cancelled,
 	// would fail the pull too and bury the cause under its message.
-	if err := checkImage(ctx, bin, image); !errors.Is(err, ErrImageMissing) || !namesRegistry(image) {
+	if err := checkImage(ctx, bin, img); !errors.Is(err, ErrImageMissing) || !image.NamesRegistry(img) {
 		return err
 	}
-	return e.pull(ctx, bin, image)
+	return e.pull(ctx, bin, img)
 }
 
 // pull brings image into the local store from the registry it names, the progress of container on
 // the engine's streams. Container run would pull it itself, but after the repository was fetched
 // and without a word on why it takes long.
-func (e *Engine) pull(ctx context.Context, bin string, image string) error {
-	code, err := e.exec(ctx, bin, []string{"image", "pull", "--", image})
+func (e *Engine) pull(ctx context.Context, bin string, img string) error {
+	code, err := e.exec(ctx, bin, []string{"image", "pull", "--", img})
 	if err != nil {
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("pull %s: %s exited %d", image, binary, code)
+		return fmt.Errorf("pull %s: %s exited %d", img, binary, code)
 	}
 	return nil
 }
@@ -123,10 +125,10 @@ const imageNotFound = "image not found"
 // would look for it on docker.io and fail with an authentication error that says nothing about the
 // cause, and any other failure of the inspect as it is. The build hint names the directory of the
 // default image, the only one cove knows.
-func checkImage(ctx context.Context, bin string, image string) error {
+func checkImage(ctx context.Context, bin string, img string) error {
 	var stderr strings.Builder
 	//nolint:gosec // G204: bin comes from LookPath and image from the caller, behind --.
-	cmd := exec.CommandContext(ctx, bin, "image", "inspect", "--", image)
+	cmd := exec.CommandContext(ctx, bin, "image", "inspect", "--", img)
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err == nil {
@@ -134,12 +136,12 @@ func checkImage(ctx context.Context, bin string, image string) error {
 	}
 	message := strings.TrimSpace(stderr.String())
 	if !strings.Contains(message, imageNotFound) {
-		return fmt.Errorf("inspect %s: %s: %w", image, message, err)
+		return fmt.Errorf("inspect %s: %s: %w", img, message, err)
 	}
 	dir := "<the directory of its Dockerfile>"
-	if image == Image {
+	if img == DefaultImage {
 		dir = "images/sandbox"
 	}
 	return fmt.Errorf("%w: %s (build it with: container build --platform linux/arm64 -t %s %s): %w",
-		ErrImageMissing, message, image, dir, err)
+		ErrImageMissing, message, img, dir, err)
 }
