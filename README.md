@@ -59,9 +59,11 @@ bin/cove send demo                                        # a terminal on the ag
 bin/cove send demo "fix the ci"                           # one turn, its JSON on stdout
 bin/cove list                                             # what is running
 bin/cove stop demo                                        # or: bin/cove stop --all
+bin/cove pull ghcr.io/you/image:tag                       # an image into ~/.cache/cove/images, by digest on stdout
 ```
 
-Go, standard library only. Any agent you can install in the image runs here.
+Go, with one dependency, go-containerregistry, justified in the decision log.
+Any agent you can install in the image runs here.
 
 ## Read more
 
