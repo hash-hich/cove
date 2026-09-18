@@ -69,11 +69,12 @@ func announced(a *App, spec sandbox.SendSpec, vms []sandbox.VM) bool {
 	return spec.Prompt == "" && slices.Contains(sandbox.Running(vms), spec.Target) && terminal(a.Stdin)
 }
 
-// terminal reports whether r is a character device, which a terminal is and a pipe or a file is
-// not. It is an approximation of the real question, whether container exec can attach a TTY: a
-// redirection from another character device passes it, and then the exec fails as it did before.
-func terminal(r io.Reader) bool {
-	f, ok := r.(*os.File)
+// terminal reports whether stream, a reader or a writer, is a character device, which a terminal
+// is and a pipe or a file is not. It is an approximation of the real question, whether container
+// exec can attach a TTY: a redirection from another character device passes it, and then the exec
+// fails as it did before.
+func terminal(stream any) bool {
+	f, ok := stream.(*os.File)
 	if !ok {
 		return false
 	}
