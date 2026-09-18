@@ -41,7 +41,7 @@ type PullOptions struct {
 func pullCommand(a *App, args []string) int {
 	opts, err := parsePull(args)
 	if errors.Is(err, flag.ErrHelp) {
-		printPullUsage(a.Stdout)
+		_, _ = fmt.Fprint(a.Stdout, pullUsage)
 		return 0
 	}
 	if err != nil {
@@ -180,10 +180,9 @@ func parsePull(args []string) (PullOptions, error) {
 	return opts, nil
 }
 
-// printPullUsage writes the usage of pull to w, in the shape of docker pull so that what
+// pullUsage is the help of pull, in the shape of docker pull so that what
 // developers already know applies.
-func printPullUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `Usage: cove pull [OPTIONS] REFERENCE
+const pullUsage = `Usage: cove pull [OPTIONS] REFERENCE
 
 Pull an image into the store of cove, an OCI layout at ~/.cache/cove/images
 ($XDG_CACHE_HOME/cove/images when set). The reference names its registry, by
@@ -204,5 +203,4 @@ Options:
 Exit codes: 0; 1 when the pull failed, the reason on stderr; 2 on a usage
 error, a reference without registry or malformed included; 130 on SIGINT and
 143 on SIGTERM, the store left without a partial blob.
-`)
-}
+`

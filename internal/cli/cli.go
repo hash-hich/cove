@@ -78,17 +78,21 @@ func printHelpHint(w io.Writer, command string) {
 	_, _ = fmt.Fprintf(w, "See '%s --help'.\n", name)
 }
 
+// coveUsage is the help of cove itself: the shape it takes, then its commands.
+const coveUsage = `Usage: cove <command> [flags]
+
+Commands:
+  help    Show help
+  list    List sandboxes (aliases: ls, ps)
+  pull    Pull an image into the store of cove
+  run     Create a sandbox from a repository
+  send    Talk to the agent of a sandbox
+  stop    Stop sandboxes
+`
+
 // printUsage writes the usage text and the flag defaults of fs to w.
 func printUsage(w io.Writer, fs *flag.FlagSet) {
-	_, _ = fmt.Fprintln(w, "Usage: cove <command> [flags]")
-	_, _ = fmt.Fprintln(w)
-	_, _ = fmt.Fprintln(w, "Commands:")
-	_, _ = fmt.Fprintln(w, "  help    Show help")
-	_, _ = fmt.Fprintln(w, "  list    List sandboxes (aliases: ls, ps)")
-	_, _ = fmt.Fprintln(w, "  pull    Pull an image into the store of cove")
-	_, _ = fmt.Fprintln(w, "  run     Create a sandbox from a repository")
-	_, _ = fmt.Fprintln(w, "  send    Talk to the agent of a sandbox")
-	_, _ = fmt.Fprintln(w, "  stop    Stop sandboxes")
+	_, _ = fmt.Fprint(w, coveUsage)
 	fs.SetOutput(w)
 	fs.PrintDefaults()
 }

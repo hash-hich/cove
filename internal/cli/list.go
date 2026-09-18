@@ -30,7 +30,7 @@ type ListOptions struct {
 func listCommand(a *App, args []string) int {
 	opts, err := parseList(args)
 	if errors.Is(err, flag.ErrHelp) {
-		printListUsage(a.Stdout)
+		_, _ = fmt.Fprint(a.Stdout, listUsage)
 		return 0
 	}
 	if err != nil {
@@ -86,10 +86,9 @@ func parseList(args []string) (ListOptions, error) {
 	return opts, nil
 }
 
-// printListUsage writes the usage of list to w, in the shape of docker ps so that what developers
+// listUsage is the help of list, in the shape of docker ps so that what developers
 // already know applies. The aliases share it: the help of ls and ps is the help of list.
-func printListUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `Usage: cove list [OPTIONS]
+const listUsage = `Usage: cove list [OPTIONS]
 
 List the sandboxes of cove, running ones by default. Only the VMs cove created
 are reported: the store is shared with VMs that are not its own. The columns are
@@ -103,5 +102,4 @@ Options:
       --format string   Output format, table or json (default table)
 
 Exit codes: 0; 2 on a usage error; 125 when cove could not run container.
-`)
-}
+`

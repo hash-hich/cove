@@ -49,7 +49,7 @@ func (e *envFlag) Set(value string) error {
 func runCommand(a *App, args []string) int {
 	opts, err := parseRun(args)
 	if errors.Is(err, flag.ErrHelp) {
-		printRunUsage(a.Stdout)
+		_, _ = fmt.Fprint(a.Stdout, runUsage)
 		return 0
 	}
 	if err != nil {
@@ -253,20 +253,19 @@ func parseRun(args []string) (RunOptions, error) {
 	return opts, nil
 }
 
-// printRunUsage writes the usage of run to w, in the shape of docker run so that what developers
+// runUsage is the help of run, in the shape of docker run so that what developers
 // already know applies.
-func printRunUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `Usage: cove run [OPTIONS] URL
+var runUsage = `Usage: cove run [OPTIONS] URL
 
 Create a sandbox: a micro-VM from an image carrying the agent, started detached
-and kept alive until it is stopped, with the repository at URL in `+sandbox.Work+`.
+and kept alive until it is stopped, with the repository at URL in ` + sandbox.Work + `.
 The whole repository is there, every branch and tag with its history, checked
 out on the branch asked for or the default one of the repository, and without a
 remote: the agent cannot reach the forge. The repository is read with the access
 this machine already has, which does not enter the VM. Prints the name of the VM
-once `+sandbox.Work+` is ready. Every instruction to the agent is a separate command.
+once ` + sandbox.Work + ` is ready. Every instruction to the agent is a separate command.
 
-The image is `+sandbox.DefaultImage+`, built from images/sandbox, unless --image names
+The image is ` + sandbox.DefaultImage + `, built from images/sandbox, unless --image names
 another one, such as a profile built on it (images/go). A name that carries no
 registry is never pulled: the image must be in the local store. One that names
 its registry is pulled from it when absent. A sandbox whose image does not
@@ -275,16 +274,15 @@ carry the agent is removed.
 Options:
   -b, --branch string   Branch to start from; the default branch of the repository otherwise
       --name string     Assign a name to the VM; container picks one otherwise
-      --image string    Image of the VM (default `+sandbox.DefaultImage+`)
+      --image string    Image of the VM (default ` + sandbox.DefaultImage + `)
       --rm              Remove the VM when it stops (default)
       --keep            Keep the stopped VM for inspection instead
       --cpus int        Number of CPUs
   -m, --memory string   Memory limit with a suffix, e.g. 512M or 4G
   -e, --env list        Set environment variables, KEY=VALUE or KEY to inherit from the host
 
-Exit codes: 0 once `+sandbox.Work+` is ready; 2 on a usage error; 125 when cove could not
+Exit codes: 0 once ` + sandbox.Work + ` is ready; 2 on a usage error; 125 when cove could not
 create the sandbox, before the VM or after it; the message of git or container
 is on stderr. A sandbox that could not be given its codebase is removed, and a
 VM that could not be removed is named in the message.
-`)
-}
+`

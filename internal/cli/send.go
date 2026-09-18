@@ -16,7 +16,7 @@ import (
 func sendCommand(a *App, args []string) int {
 	spec, err := parseSend(args)
 	if errors.Is(err, flag.ErrHelp) {
-		printSendUsage(a.Stdout)
+		_, _ = fmt.Fprint(a.Stdout, sendUsage)
 		return 0
 	}
 	if err != nil {
@@ -152,10 +152,9 @@ func readOperands(spec *sandbox.SendSpec, args []string) error {
 	return nil
 }
 
-// printSendUsage writes the usage of send to w, in the shape of docker exec so that what developers
+// sendUsage is the help of send, in the shape of docker exec so that what developers
 // already know applies.
-func printSendUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `Usage: cove send [OPTIONS] SANDBOX [PROMPT]
+const sendUsage = `Usage: cove send [OPTIONS] SANDBOX [PROMPT]
 
 Talk to the agent of a sandbox, given by name or ID. With a prompt, the agent
 runs that one turn and the JSON it answers is copied to stdout as it comes.
@@ -178,5 +177,4 @@ Options:
 Exit codes: the one of container exec, which carries the one of the agent; 1
 when the target is not a sandbox of cove; 2 on a usage error; 125 when cove
 could not run container.
-`)
-}
+`

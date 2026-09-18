@@ -18,7 +18,7 @@ const exitRefused = 1
 func stopCommand(a *App, args []string) int {
 	spec, all, err := parseStop(args)
 	if errors.Is(err, flag.ErrHelp) {
-		printStopUsage(a.Stdout)
+		_, _ = fmt.Fprint(a.Stdout, stopUsage)
 		return 0
 	}
 	if err != nil {
@@ -111,10 +111,9 @@ func parseStop(args []string) (sandbox.StopSpec, bool, error) {
 	return spec, false, nil
 }
 
-// printStopUsage writes the usage of stop to w, in the shape of docker stop so that what
+// stopUsage is the help of stop, in the shape of docker stop so that what
 // developers already know applies.
-func printStopUsage(w io.Writer) {
-	_, _ = fmt.Fprint(w, `Usage: cove stop [OPTIONS] SANDBOX [SANDBOX...]
+const stopUsage = `Usage: cove stop [OPTIONS] SANDBOX [SANDBOX...]
        cove stop --all
 
 Stop one or more sandboxes, given by name or ID. Prints the ID of each VM
@@ -128,5 +127,4 @@ Options:
 
 Exit codes: 0 when every target stopped; 1 when one was refused or unknown; 2
 on a usage error; 125 when cove could not run container.
-`)
-}
+`
