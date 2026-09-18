@@ -7,12 +7,11 @@ acceptance verifies, and nothing more is promised to other Go repositories.
 The rules every profile must keep are in the extension point of the base
 image README.
 
-## Build and use
+## Build
 
 ```bash
 docker build --platform linux/arm64 -t cove-sandbox:local images/sandbox   # the base, first
 docker build --platform linux/arm64 -t cove-go:local images/go
-cove run --image cove-go:local <URL>
 ```
 
 The tag follows the base image: local store only, no version in the tag, so
@@ -29,13 +28,14 @@ docker run --rm cove-go:local id -u                   # 0, as the base image
 docker run --rm cove-go:local ls -A /root             # .claude.json only
 ```
 
-Then the commitment itself, on a sandbox created by cove from the cove
-repository: its definition of done runs there as it runs on the workstation.
+Then the commitment itself, on a clone of cove fetched inside the image, the
+way a sandbox gets it: its definition of done runs there as it runs on the
+workstation. Nothing of the host is mounted, as in a real run.
 
 ```bash
-name=$(cove run --image cove-go:local ssh://git@gitlab.com/hich-hich/cove.git)
-container exec "$name" sh -c 'cd /work && go build ./... && golangci-lint run && go test ./...'
-cove stop "$name"
+docker run --rm cove-go:local sh -c '
+  git clone --depth 1 https://gitlab.com/hich-hich/cove.git /work &&
+  cd /work && go build ./... && golangci-lint run && go test ./...'
 ```
 
 ## What the profile adds

@@ -3,6 +3,49 @@
 A log, newest first. Each entry says what was decided, why, and what was
 rejected.
 
+## 2026-09-18: Apple `container` is no longer a backend of cove
+
+**Decided.** The Apple `container` backend leaves the repository.
+`internal/sandbox` drove its CLI, and `run`, `send`, `stop` and `list` were
+that package behind a flag set, so the four verbs go with it. `cove` keeps
+`pull`, which talks to a registry and to the store rather than to a VM, and
+each verb comes back when the backend that replaces this one carries it. The
+last commit where the backend runs is tagged `apple-container`.
+
+**Why.** The repository asserted two targets at once, and the Apple
+`container` one had every argument on its side: it compiled, it was tested, it
+was in the README, in the build commands of `AGENTS.md`, in `DefaultImage`,
+and in the error that told the user to build an image with `container build`.
+A reader, human or agent, believed that one and was right to. Keeping a
+backend that is not the target, alive only because it works, makes every later
+decision ambiguous, and the ambiguity costs more than the four verbs are worth
+while no one runs cove. Nothing is lost: the code is one tag away, by name,
+indefinitely.
+
+**What dies with it.** Everything measured on `container` 1.3.1 and relied
+upon by that code: the `image not found` string as the only sign of an absent
+image, the refusal of a label value containing `=`, the `--force` of `delete`,
+the waiting process 1 behind the init, and the `125` that stood for a failure
+of the CLI itself. The entries below that record those measurements are not
+rewritten: a log says what was true when it was written.
+
+**What survives, and where.** `/work` as the working directory and `/root` as
+the home stay the contract of the image, stated in
+[images/sandbox/README.md](../images/sandbox/README.md) and nowhere else. The
+branch the agent starts from stops being a label of a VM and becomes an entry
+of the run registry, written by cove on the host. The check that an image
+carries the agent stops being a `container exec` and becomes a check in the
+flattened rootfs. Whether the agent still runs as root, and whether `/work`
+survives the working directory of the image config, are decisions of the
+backend that comes next, not of this removal.
+
+**Rejected.** Keeping the backend behind a build tag or a flag: two targets in
+the tree is the problem, and hiding one of them does not remove the ambiguity,
+it only makes it harder to see. Deleting `internal/sandbox` while keeping the
+four verbs: they hold nothing else. Deleting `internal/receiver` with them: it
+has no caller left, but it is tested on its own and the new model needs it
+unchanged, so it stays in place.
+
 ## 2026-09-18: dependencies are vendored
 
 **Decided.** `vendor/` is committed. A dependency enters with

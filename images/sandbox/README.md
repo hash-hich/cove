@@ -1,7 +1,7 @@
 # Sandbox image
 
-Base OCI image booted by the cove micro-VM (Apple `container`, the backend of the workstation).
-It contains Claude Code, git, and the minimum needed to run them, and nothing
+Base OCI image booted by the cove micro-VM. It contains Claude Code, git, and
+the minimum needed to run them, and nothing
 from the host. The decisions below are summarised in the image entry of
 [docs/decisions.md](../../docs/decisions.md); this file is the detailed spec.
 
@@ -30,10 +30,10 @@ Dockerfile against itself, and its lists of paths and patterns were the kind
 of list that goes stale unnoticed.
 
 What can still let the host in is not the image but the way it is started:
-`container run` accepts `--volume`, `-e` and `-u`. Those flags live in the
-argument array cove will build, and that array is where a test belongs: a Go
-unit test asserting that no mount, no environment variable and no user
-override is passed. It comes with the issue that introduces the wrapper.
+every runtime accepts a mount, an environment variable and a user override.
+Those belong to the backend that boots this image, and that is where the test
+belongs: no mount, no environment variable and no user override is passed. It
+comes with the backend.
 
 ## Acceptance
 
@@ -50,14 +50,17 @@ docker run --rm cove-sandbox:local claude --dangerously-skip-permissions --print
 ```
 
 Then the first launch, which no static check covers because the keys of
-`claude.json` are undocumented. On a fresh sandbox created by cove, with the
+`claude.json` are undocumented. Each line starts a throwaway container, so what
+answers is the state the image ships, which is what is under test. With the
 credential the agent needs:
 
 ```bash
-cove run --name t9 -e CLAUDE_CODE_OAUTH_TOKEN=...
-cove send t9                 # the prompt, with no theme, login, trust or bypass permissions dialog before it
-cove send t9 "Answer ok"     # JSON carrying a model answer, no setup or login error
-cove stop t9
+docker run --rm -it -e CLAUDE_CODE_OAUTH_TOKEN=... cove-sandbox:local \
+  claude --dangerously-skip-permissions
+# the prompt, with no theme, login, trust or bypass permissions dialog before it
+docker run --rm -e CLAUDE_CODE_OAUTH_TOKEN=... cove-sandbox:local \
+  claude --dangerously-skip-permissions --print --output-format json -- "Answer ok"
+# JSON carrying a model answer, no setup or login error
 ```
 
 A dialog showing up here means the pinned version reads other keys than the
@@ -131,9 +134,9 @@ rejected.
    configuration; the same user with sudo, which keeps the refusal under
    `sudo claude` and leaves the agent one more thing to remember;
    `CLAUDE_CODE_BUBBLEWRAP`, the other variable that lifts the check, which
-   names a sandbox mechanism the image does not have; a user override on
-   `container exec` by cove, since cove passes no user and the state of the
-   home follows the version pinned here, not the version of cove.
+   names a sandbox mechanism the image does not have; a user override by
+   cove, since cove passes no user and the state of the home follows the
+   version pinned here, not the version of cove.
 5. **Deliberately absent.** No credentials, no host path, no shell profile,
    no apt lists, no package cache, no `~/.claude` directory, `~/.ssh`,
    `~/.aws`, no `/Users`. The rule holds by absence: these paths do not exist,
@@ -148,13 +151,13 @@ rejected.
    every bump; the version is exposed by `claude --version` and by the
    `org.opencontainers.image.version` label.
 7. **Extension point.** A profile is an image built on this one, named at
-   `run` with `--image`, that adds what the definition of done of a project
-   needs (its runtime, its package manager, its linters), pinned. It is not a
+   run time, that adds what the definition of done of a project needs (its
+   runtime, its package manager, its linters), pinned. It is not a
    barrier: the agent installs what it wants during the run, and that
    disappears with the VM. A profile must keep the **agent**, the only
-   program cove starts in the VM and the one thing `run` checks (a VM whose
-   image does not answer `claude --version` is removed); **`/work` as the
-   working directory**, where the repository is put; **the first launch state
+   program cove starts in the VM and the one thing cove checks of an image
+   (an image that does not answer `claude --version` is refused); **`/work`
+   as the working directory**, where the repository is put; **the first launch state
    of the agent** in its home, without which the first turn goes into dialogs
    instead of answering; and **no command launched by default**, since cove
    passes the whole command at start. Nothing else is controlled: the other
