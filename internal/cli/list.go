@@ -35,7 +35,7 @@ func listCommand(a *App, args []string) int {
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove list: %v\n", err)
-		printHelpHint(a.Stderr, "list")
+		printUsageError(a.Stderr, "list", listUsage)
 		return ExitUsage
 	}
 

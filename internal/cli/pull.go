@@ -46,7 +46,7 @@ func pullCommand(a *App, args []string) int {
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove pull: %v\n", err)
-		printHelpHint(a.Stderr, "pull")
+		printUsageError(a.Stderr, "pull", pullUsage)
 		return ExitUsage
 	}
 

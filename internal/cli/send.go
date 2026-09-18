@@ -21,7 +21,7 @@ func sendCommand(a *App, args []string) int {
 	}
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove send: %v\n", err)
-		printHelpHint(a.Stderr, "send")
+		printUsageError(a.Stderr, "send", sendUsage)
 		return ExitUsage
 	}
 

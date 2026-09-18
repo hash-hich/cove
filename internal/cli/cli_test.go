@@ -60,6 +60,17 @@ func pullArgs(args ...string) []string {
 	return append([]string{"pull"}, args...)
 }
 
+// refused names the command a usage error is about: the verb when args name one, cove itself
+// otherwise, which is what its shape is shown for.
+func refused(args []string) string {
+	switch args[0] {
+	case "list", "pull", "run", "send", "stop":
+		return "cove " + args[0]
+	default:
+		return "cove"
+	}
+}
+
 func TestRunUsageErrors(t *testing.T) {
 	t.Parallel()
 
@@ -111,6 +122,8 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "pull bare name", args: pullArgs(demo), wantStderr: "names no registry"},
 		{name: "pull docker.io implied", args: pullArgs("org/repo:tag"), wantStderr: "names no registry"},
 		{name: "pull malformed", args: pullArgs("ghcr.io/Org/repo:tag"), wantStderr: "invalid reference"},
+		{name: "stop shows both its shapes", args: stopArgs(), wantStderr: "Usage: cove stop [OPTIONS] SANDBOX" +
+			" [SANDBOX...]\n       cove stop --all\n"},
 	}
 
 	for _, tt := range tests {
@@ -124,14 +137,18 @@ func TestRunUsageErrors(t *testing.T) {
 			require.Equal(t, cli.ExitUsage, code)
 			require.Empty(t, stdout.String())
 			require.Contains(t, stderr.String(), tt.wantStderr)
-			// A bare cove gets the usage. An error gets the way to it: the usage would drown the
-			// error, which is what the caller must read.
+			// A bare cove gets the whole usage. An error gets the message, the shapes of the
+			// command it names and the way to the help: the options and the prose would drown
+			// the message, which is what the caller must read.
 			if len(tt.args) == 0 {
-				require.Contains(t, stderr.String(), "Usage: cove")
-			} else {
-				require.Contains(t, stderr.String(), "--help'.")
-				require.NotContains(t, stderr.String(), "Usage:")
+				require.Contains(t, stderr.String(), "Usage: cove <command>")
+				require.Contains(t, stderr.String(), "Commands:")
+				return
 			}
+			require.Contains(t, stderr.String(), "\nUsage: "+refused(tt.args)+" ")
+			require.Contains(t, stderr.String(), "See '"+refused(tt.args)+" --help'.\n")
+			require.NotContains(t, stderr.String(), "Options:")
+			require.NotContains(t, stderr.String(), "Exit codes:")
 		})
 	}
 }
