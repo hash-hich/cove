@@ -8,10 +8,12 @@ from the host. The decisions below are summarised in the image entry of
 ## Build
 
 ```bash
-container build --platform linux/arm64 -t cove-sandbox:local images/sandbox
+docker build --platform linux/arm64 -t cove-sandbox:local images/sandbox
 ```
 
-The image is stored in the local `container` image store only. No registry is
+`podman build` takes the same arguments and produces the same image; the
+commands below are written with docker, and podman is a drop-in substitute
+throughout. The image is stored in the local image store only. No registry is
 involved for now: every host that runs cove builds the image itself from this
 directory, which is what keeps the content reproducible from the repository
 alone.
@@ -38,13 +40,13 @@ override is passed. It comes with the issue that introduces the wrapper.
 Run once when the Dockerfile changes, and paste the output in the MR:
 
 ```bash
-container run --rm cove-sandbox:local claude --version   # the pinned version
-container run --rm cove-sandbox:local id -u              # 0: the agent is root
-container run --rm cove-sandbox:local git --version
-container run --rm cove-sandbox:local env                # PATH, HOME, IS_SANDBOX, DISABLE_UPDATES only
-container run --rm cove-sandbox:local ls -A /root        # .claude.json only
-container run --rm cove-sandbox:local stat -c '%U %a' /root/.claude.json   # root 600
-container run --rm cove-sandbox:local claude --dangerously-skip-permissions --print --output-format json -- ok   # JSON with is_error (no credential), not the refusal as root
+docker run --rm cove-sandbox:local claude --version   # the pinned version
+docker run --rm cove-sandbox:local id -u              # 0: the agent is root
+docker run --rm cove-sandbox:local git --version
+docker run --rm cove-sandbox:local env                # PATH, HOME, IS_SANDBOX, DISABLE_UPDATES only
+docker run --rm cove-sandbox:local ls -A /root        # .claude.json only
+docker run --rm cove-sandbox:local stat -c '%U %a' /root/.claude.json   # root 600
+docker run --rm cove-sandbox:local claude --dangerously-skip-permissions --print --output-format json -- ok   # JSON with is_error (no credential), not the refusal as root
 ```
 
 Then the first launch, which no static check covers because the keys of
@@ -140,11 +142,11 @@ rejected.
    image never has to undo one; the default command is the base image's
    `bash`. No telemetry related variables: what the guest may reach on the
    network is the networking issue's decision.
-6. **Build and storage.** `container build` from this directory, tag
+6. **Build and storage.** `docker build` from this directory, tag
    `cove-sandbox:local`, local image store only. The tag does not carry the
-   Claude Code version so that the build command in `AGENTS.md` does not
-   change at every bump; the version is exposed by `claude --version` and by
-   the `org.opencontainers.image.version` label.
+   Claude Code version so that the build command above does not change at
+   every bump; the version is exposed by `claude --version` and by the
+   `org.opencontainers.image.version` label.
 7. **Extension point.** A profile is an image built on this one, named at
    `run` with `--image`, that adds what the definition of done of a project
    needs (its runtime, its package manager, its linters), pinned. It is not a
@@ -215,7 +217,7 @@ rejected.
    no gpg, so run it in a throwaway container:
 
    ```bash
-   container run --rm -i debian:trixie-slim bash -s <version> <<'SH'
+   docker run --rm -i debian:trixie-slim bash -s <version> <<'SH'
    set -euo pipefail
    V="$1"; R=https://downloads.claude.ai/claude-code-releases
    apt-get update >/dev/null && apt-get install -y --no-install-recommends ca-certificates curl gnupg jq >/dev/null
@@ -249,7 +251,7 @@ rejected.
   release, but two builds on different days can differ in that layer.
   Accepted for now: pinning exact package versions breaks the build at every
   security update, and snapshot.debian.org adds slowness and moving parts.
-  `container image inspect cove-sandbox:local` gives the digest actually
+  `docker image inspect cove-sandbox:local` gives the digest actually
   built when the MR or the run log needs to record what ran.
 - **The digest is not stable across builds.** Two builds from the same
   commit produce the same files but not the same digest: layer timestamps

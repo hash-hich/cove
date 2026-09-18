@@ -10,8 +10,8 @@ image README.
 ## Build and use
 
 ```bash
-container build --platform linux/arm64 -t cove-sandbox:local images/sandbox   # the base, first
-container build --platform linux/arm64 -t cove-go:local images/go
+docker build --platform linux/arm64 -t cove-sandbox:local images/sandbox   # the base, first
+docker build --platform linux/arm64 -t cove-go:local images/go
 cove run --image cove-go:local <URL>
 ```
 
@@ -23,10 +23,10 @@ that the command above does not change at every bump.
 Run once when the Dockerfile changes, and paste the output in the MR:
 
 ```bash
-container run --rm cove-go:local go version              # the pinned version
-container run --rm cove-go:local golangci-lint version   # the pinned version
-container run --rm cove-go:local id -u                   # 0, as the base image
-container run --rm cove-go:local ls -A /root             # .claude.json only
+docker run --rm cove-go:local go version              # the pinned version
+docker run --rm cove-go:local golangci-lint version   # the pinned version
+docker run --rm cove-go:local id -u                   # 0, as the base image
+docker run --rm cove-go:local ls -A /root             # .claude.json only
 ```
 
 Then the commitment itself, on a sandbox created by cove from the cove
