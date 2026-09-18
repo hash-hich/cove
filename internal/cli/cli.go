@@ -52,18 +52,8 @@ func (a *App) Run(args []string) int {
 	case "help":
 		printUsage(a.Stdout, fs)
 		return 0
-	// ls and ps are the names docker and container gave the same verb; both reach list, whose
-	// help and errors carry the canonical name.
-	case "list", "ls", "ps":
-		return listCommand(a, fs.Args()[1:])
 	case "pull":
 		return pullCommand(a, fs.Args()[1:])
-	case "run":
-		return runCommand(a, fs.Args()[1:])
-	case "send":
-		return sendCommand(a, fs.Args()[1:])
-	case "stop":
-		return stopCommand(a, fs.Args()[1:])
 	default:
 		_, _ = fmt.Fprintf(a.Stderr, "unknown command %q\n", cmd)
 		printUsageError(a.Stderr, "", coveUsage)
@@ -72,9 +62,8 @@ func (a *App) Run(args []string) int {
 }
 
 // terminal reports whether stream, a reader or a writer, is a character device, which a terminal
-// is and a pipe or a file is not. It is an approximation of the real question, whether container
-// exec can attach a TTY: a redirection from another character device passes it, and then the exec
-// fails as it did before.
+// is and a pipe or a file is not. It is an approximation of the real question, whether the stream
+// renders what is written for a human: a redirection from another character device passes it.
 func terminal(stream any) bool {
 	f, ok := stream.(*os.File)
 	if !ok {
@@ -109,11 +98,7 @@ const coveUsage = `Usage: cove <command> [flags]
 
 Commands:
   help    Show help
-  list    List sandboxes (aliases: ls, ps)
   pull    Pull an image into the store of cove
-  run     Create a sandbox from a repository
-  send    Talk to the agent of a sandbox
-  stop    Stop sandboxes
 `
 
 // printUsage writes the usage text and the flag defaults of fs to w.

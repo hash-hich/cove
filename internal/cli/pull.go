@@ -18,8 +18,8 @@ import (
 
 // The exit codes of pull: the 1 of docker pull when what was tried failed, and 128 plus the number
 // of the signal, the convention of the shell, so that a script tells an interruption from a
-// failure. The 125 of the verbs that drive the container CLI does not apply: no other tool is
-// involved.
+// failure. The 125 docker keeps for a failure of the engine itself does not apply: pull drives no
+// other tool, it talks to the registry and writes the store.
 const (
 	exitFailed     = 1
 	exitInterrupt  = 130
@@ -33,7 +33,7 @@ type PullOptions struct {
 	// Quiet leaves stderr empty, the reference by digest alone on stdout.
 	Quiet bool
 	// JSON puts one object on stdout instead of the reference, stderr empty; Quiet is then
-	// ignored, as on list, where a format that has its own shape wins.
+	// ignored: a format that has its own shape wins over a flag that only trims one.
 	JSON bool
 }
 
@@ -61,7 +61,7 @@ func pullCommand(a *App, args []string) int {
 		return 0
 	}
 	// The reference by digest comes last, on success only: an image=$(cove pull ...) must hold
-	// what run can start, or nothing.
+	// what names the image exactly, or nothing.
 	_, _ = fmt.Fprintln(a.Stdout, res.Pinned())
 	return 0
 }
@@ -193,7 +193,7 @@ registry is asked what the reference designates on every call, as docker pull
 does; only the layers absent from the store are downloaded, each verified
 against the digest that names it. The credentials are those docker login or
 podman login configured, nothing is asked. Prints the reference by digest of
-the manifest pulled, never of an index: what to give run.
+the manifest pulled, never of an index: the exact name of what was stored.
 
 Options:
   -q, --quiet   Print only the reference by digest, nothing on stderr
