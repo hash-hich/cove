@@ -14,3 +14,6 @@ func Unlock(l *FileLock) { l.unlock() }
 
 // LockPoll exposes lockPoll to the tests of the package.
 const LockPoll = lockPoll
+
+// FormatSize exposes formatSize to the tests of the package.
+var FormatSize = formatSize
