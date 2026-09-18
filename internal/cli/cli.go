@@ -53,6 +53,8 @@ func (a *App) Run(args []string) int {
 	// help and errors carry the canonical name.
 	case "list", "ls", "ps":
 		return listCommand(a, fs.Args()[1:])
+	case "pull":
+		return pullCommand(a, fs.Args()[1:])
 	case "run":
 		return runCommand(a, fs.Args()[1:])
 	case "send":
@@ -83,6 +85,7 @@ func printUsage(w io.Writer, fs *flag.FlagSet) {
 	_, _ = fmt.Fprintln(w, "Commands:")
 	_, _ = fmt.Fprintln(w, "  help    Show help")
 	_, _ = fmt.Fprintln(w, "  list    List sandboxes (aliases: ls, ps)")
+	_, _ = fmt.Fprintln(w, "  pull    Pull an image into the store of cove")
 	_, _ = fmt.Fprintln(w, "  run     Create a sandbox from a repository")
 	_, _ = fmt.Fprintln(w, "  send    Talk to the agent of a sandbox")
 	_, _ = fmt.Fprintln(w, "  stop    Stop sandboxes")
