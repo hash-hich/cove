@@ -1,10 +1,11 @@
-package sandbox_test
+package image_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/hich-hich/cove/internal/image"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
@@ -15,7 +16,7 @@ func TestNamesRegistry(t *testing.T) {
 		image string
 		want  bool
 	}{
-		{image: demo},
+		{image: "demo"},
 		{image: sandbox.Image},
 		{image: "org/repo:tag"},
 		{image: "org/repo@sha256:0123456789abcdef"},
@@ -31,7 +32,7 @@ func TestNamesRegistry(t *testing.T) {
 		t.Run(tt.image, func(t *testing.T) {
 			t.Parallel()
 
-			require.Equal(t, tt.want, sandbox.NamesRegistry(tt.image))
+			require.Equal(t, tt.want, image.NamesRegistry(tt.image))
 		})
 	}
 }
