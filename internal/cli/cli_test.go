@@ -31,6 +31,8 @@ const (
 	fix  = "fix"
 	// goImage is the profile the run tests name.
 	goImage = "cove-go:local"
+	// remote is the image the pull tests name, on its registry.
+	remote = "ghcr.io/org/repo:tag"
 )
 
 // runArgs prefixes args with the run command.
@@ -51,6 +53,11 @@ func stopArgs(args ...string) []string {
 // sendArgs prefixes args with the send command.
 func sendArgs(args ...string) []string {
 	return append([]string{"send"}, args...)
+}
+
+// pullArgs prefixes args with the pull command.
+func pullArgs(args ...string) []string {
+	return append([]string{"pull"}, args...)
 }
 
 func TestRunUsageErrors(t *testing.T) {
@@ -92,6 +99,18 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "send continue and resume", args: sendArgs("-c", "-r", review, demo), wantStderr: "mutually exclusive"},
 		{name: "send unknown flag", args: sendArgs("--bogus", demo), wantStderr: unknownFlag},
 		{name: "send docker detach", args: sendArgs("-d", demo), wantStderr: "not defined: -d"},
+		{name: "pull no reference", args: pullArgs(), wantStderr: "requires 1 argument"},
+		{name: "pull two references", args: pullArgs(remote, "ghcr.io/org/other:tag"), wantStderr: "one reference"},
+		{name: "pull unknown flag", args: pullArgs("--bogus", remote), wantStderr: unknownFlag},
+		{
+			name:       "pull docker platform",
+			args:       pullArgs("--platform", "linux/amd64", remote),
+			wantStderr: "not defined: -platform",
+		},
+		{name: "pull docker all tags", args: pullArgs("-a", remote), wantStderr: "not defined: -a"},
+		{name: "pull bare name", args: pullArgs(demo), wantStderr: "names no registry"},
+		{name: "pull docker.io implied", args: pullArgs("org/repo:tag"), wantStderr: "names no registry"},
+		{name: "pull malformed", args: pullArgs("ghcr.io/Org/repo:tag"), wantStderr: "invalid reference"},
 	}
 
 	for _, tt := range tests {
@@ -131,6 +150,8 @@ func TestRunHelp(t *testing.T) {
 		{name: "stop flag", args: stopArgs("-h"), want: "Usage: cove stop"},
 		{name: "send flag", args: sendArgs("-h"), want: "Usage: cove send"},
 		{name: "list flag", args: listArgs("-h"), want: listUsage},
+		{name: "pull flag", args: pullArgs("-h"), want: "Usage: cove pull"},
+		{name: "pull listed", args: []string{"help"}, want: "pull    Pull an image"},
 		{name: "ls alias", args: []string{"ls", "-h"}, want: listUsage},
 		{name: "ps alias", args: []string{"ps", "-h"}, want: listUsage},
 	}
@@ -357,5 +378,72 @@ func TestAnnounced(t *testing.T) {
 
 			require.Equal(t, tt.want, cli.Announced(app, tt.spec, tt.vms))
 		})
+	}
+}
+
+func TestParsePull(t *testing.T) {
+	t.Parallel()
+
+	const digest = "ghcr.io/org/repo@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	tests := []struct {
+		name    string
+		args    []string
+		wantRef string
+		want    cli.PullOptions
+	}{
+		{name: "by tag", args: []string{remote}, wantRef: remote},
+		{name: "tag left out", args: []string{"ghcr.io/org/repo"}, wantRef: "ghcr.io/org/repo:latest"},
+		{name: "by digest", args: []string{digest}, wantRef: digest},
+		{name: "quiet", args: []string{"-q", remote}, wantRef: remote, want: cli.PullOptions{Quiet: true}},
+		{name: "json", args: []string{"--json", remote}, wantRef: remote, want: cli.PullOptions{JSON: true}},
+		{
+			name:    longForms,
+			args:    []string{"--quiet", "--json", remote},
+			wantRef: remote,
+			want:    cli.PullOptions{Quiet: true, JSON: true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts, err := cli.ParsePull(tt.args)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.wantRef, opts.Ref.Name())
+			opts.Ref = nil
+			require.Equal(t, tt.want, opts)
+		})
+	}
+}
+
+func TestPullFailsWhenTheRegistryCannotBeReached(t *testing.T) {
+	// The store goes to a fresh cache directory; port 1 answers nothing on the loopback, so no
+	// request leaves the machine.
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	const unreachable = "127.0.0.1:1/org/repo:tag"
+
+	tests := []struct {
+		args []string
+		// wantLines counts the lines of stderr: the facts and the reason, or the reason alone.
+		wantLines int
+	}{
+		{args: pullArgs(unreachable), wantLines: 2},
+		{args: pullArgs("--json", unreachable), wantLines: 1},
+		{args: pullArgs("-q", unreachable), wantLines: 1},
+	}
+
+	for _, tt := range tests {
+		var stdout, stderr bytes.Buffer
+		app := &cli.App{Stdout: &stdout, Stderr: &stderr}
+
+		code := app.Run(tt.args)
+
+		require.Equal(t, 1, code, tt.args)
+		require.Empty(t, stdout.String())
+		lines := strings.Split(strings.TrimSuffix(stderr.String(), "\n"), "\n")
+		require.Len(t, lines, tt.wantLines, stderr.String())
+		require.Contains(t, lines[len(lines)-1], "cove pull: 127.0.0.1:1: ")
 	}
 }
