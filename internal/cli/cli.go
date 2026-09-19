@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -68,6 +69,19 @@ func (a *App) Run(args []string) int {
 		printUsageError(a.Stderr, "", coveUsage)
 		return ExitUsage
 	}
+}
+
+// terminal reports whether stream, a reader or a writer, is a character device, which a terminal
+// is and a pipe or a file is not. It is an approximation of the real question, whether container
+// exec can attach a TTY: a redirection from another character device passes it, and then the exec
+// fails as it did before.
+func terminal(stream any) bool {
+	f, ok := stream.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // printUsageError writes to w what follows the message of a usage error: the shapes the command
