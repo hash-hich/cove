@@ -249,26 +249,6 @@ and `list` shows the one actually used. The rules of a profile replace "the
 user of the base image" and "nothing in the home": the user describes the base image, and the
 home must keep the first launch state, not stay empty.
 
-## 2026-09-12: what this base drops from the previous framing
-
-The previous design documents were organised around one VMM and a merge
-request flow. Kept: the dated entries below. Dropped, with the reason:
-
-- **A LAN filter inside the guest** (nftables set as root before the agent):
-  it contradicts "no control lives in the VM". The single route is imposed by
-  the host or the infrastructure.
-- **Internet open because there is nothing to steal**: replaced by egress
-  denied by default and a domain list declared by the run. The list is a
-  context control as much as an exfiltration control.
-- **A broker on the workstation with a control face and a data face**: it
-  becomes the proxy, a daemon deployed next to the sandboxes, with the same
-  role and the per-run credential.
-- **Inspection of the merge request content, push by SHA, `ci.skip`**: the
-  forge side is out of scope. What comes out of a run is a branch or a diff and
-  a trace; what the forge does with it is another project.
-- **A catalogue of attack surfaces and numbered requirements**: the rules of
-  the [need-and-target](need-and-target.md) carry their reasons instead.
-
 ## 2026-09-10: the whole repository in `/work`, without a remote
 
 **Decided.** `run` takes a forge URL and a branch, never a local path or the
