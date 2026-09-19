@@ -8,12 +8,13 @@ import (
 	"io"
 	"slices"
 
+	"gitlab.com/hich-hich/cove/internal/agent"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
 // sendCommand drives the agent of a sandbox and returns the process exit code.
 func sendCommand(a *App, args []string) int {
-	spec, err := parseSend(args)
+	turn, err := parseSend(args)
 	if errors.Is(err, flag.ErrHelp) {
 		_, _ = fmt.Fprint(a.Stdout, sendUsage)
 		return 0
@@ -32,28 +33,28 @@ func sendCommand(a *App, args []string) int {
 	}
 	// Cove never talks to a VM it did not launch, as stop refuses one. A target it knows nothing
 	// about is left to container, which resolves IDs and reports the unknown ones itself.
-	if len(sandbox.Screen(vms, []string{spec.Target}).Refused) > 0 {
-		_, _ = fmt.Fprintf(a.Stderr, "cove send: %s is not a cove sandbox\n", spec.Target)
+	if len(sandbox.Screen(vms, []string{turn.Target}).Refused) > 0 {
+		_, _ = fmt.Fprintf(a.Stderr, "cove send: %s is not a cove sandbox\n", turn.Target)
 		return exitRefused
 	}
 
-	if !spec.Resume && !spec.Continue {
-		spec.Thread = sandbox.NewThreadID()
+	if !turn.Resume && !turn.Continue {
+		turn.Thread = agent.NewThreadID()
 		// Driven, the identifier comes back in the session_id of the JSON, and stdout must carry
 		// that JSON and nothing else. Attached there is no JSON and stdout is the PTY, so stderr is
 		// the only place left to name the thread a later turn would resume.
-		if announced(a, spec, vms) {
-			_, _ = fmt.Fprintf(a.Stderr, "thread %s\n", spec.Thread)
+		if announced(a, turn, vms) {
+			_, _ = fmt.Fprintf(a.Stderr, "thread %s\n", turn.Thread)
 		}
 	}
 
 	// Stdin reaches the agent only when a terminal is attached to it: a driven turn reads nothing.
 	stdin := a.Stdin
-	if spec.Prompt != "" {
+	if turn.Prompt != "" {
 		stdin = nil
 	}
 	engine := &sandbox.Engine{Stdin: stdin, Stdout: a.Stdout, Stderr: a.Stderr}
-	code, err := engine.Send(ctx, spec)
+	code, err := engine.Send(ctx, turn)
 	if err != nil {
 		_, _ = fmt.Fprintf(a.Stderr, "cove send: %v\n", err)
 		return ExitPreflight
@@ -61,77 +62,77 @@ func sendCommand(a *App, args []string) int {
 	return code
 }
 
-// announced reports whether the thread of spec is to be announced: a terminal is about to be
+// announced reports whether the thread of turn is to be announced: a terminal is about to be
 // attached, on a sandbox that runs, from a terminal (container exec -t needs one). An
 // identifier for a thread that never opened would be resumed in vain.
-func announced(a *App, spec sandbox.SendSpec, vms []sandbox.VM) bool {
-	return spec.Prompt == "" && slices.Contains(sandbox.Running(vms), spec.Target) && terminal(a.Stdin)
+func announced(a *App, turn agent.Turn, vms []sandbox.VM) bool {
+	return turn.Prompt == "" && slices.Contains(sandbox.Running(vms), turn.Target) && terminal(a.Stdin)
 }
 
-// parseSend turns the arguments of send into a send spec. It returns flag.ErrHelp when help was
+// parseSend turns the arguments of send into a turn. It returns flag.ErrHelp when help was
 // asked for, and an error carrying the message to show on any other usage error.
-func parseSend(args []string) (sandbox.SendSpec, error) {
-	var spec sandbox.SendSpec
+func parseSend(args []string) (agent.Turn, error) {
+	var turn agent.Turn
 	fs := flag.NewFlagSet("cove send", flag.ContinueOnError)
 	// flag would print the message itself; the caller prints it with the usage, once.
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {}
-	fs.StringVar(&spec.Thread, "r", "", "")
-	fs.StringVar(&spec.Thread, "resume", "", "")
-	fs.BoolVar(&spec.Continue, "c", false, "")
-	fs.BoolVar(&spec.Continue, "continue", false, "")
-	fs.StringVar(&spec.Name, "n", "", "")
-	fs.StringVar(&spec.Name, "name", "", "")
+	fs.StringVar(&turn.Thread, "r", "", "")
+	fs.StringVar(&turn.Thread, "resume", "", "")
+	fs.BoolVar(&turn.Continue, "c", false, "")
+	fs.BoolVar(&turn.Continue, "continue", false, "")
+	fs.StringVar(&turn.Name, "n", "", "")
+	fs.StringVar(&turn.Name, "name", "", "")
 
 	if err := fs.Parse(args); err != nil {
 		//nolint:wrapcheck // flag's messages are complete and name the flag; a prefix would only repeat them.
-		return spec, err
+		return turn, err
 	}
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "r" || f.Name == "resume" {
-			spec.Resume = true
+			turn.Resume = true
 		}
 	})
-	if err := readOperands(&spec, fs.Args()); err != nil {
-		return spec, err
+	if err := readOperands(&turn, fs.Args()); err != nil {
+		return turn, err
 	}
-	if err := checkThread(spec); err != nil {
-		return spec, err
+	if err := checkThread(turn); err != nil {
+		return turn, err
 	}
-	return spec, nil
+	return turn, nil
 }
 
 // checkThread rejects the thread flags that name no thread or two at once.
-func checkThread(spec sandbox.SendSpec) error {
-	if spec.Resume && spec.Thread == "" {
+func checkThread(turn agent.Turn) error {
+	if turn.Resume && turn.Thread == "" {
 		return errors.New("--resume requires a thread, by UUID or by display name")
 	}
-	if spec.Resume && spec.Continue {
+	if turn.Resume && turn.Continue {
 		return errors.New("--continue and --resume are mutually exclusive")
 	}
 	// Driven, claude's --continue skips the threads driven turns created and starts afresh without
 	// a word: the caller would believe the agent has lost the thread.
-	if spec.Continue && spec.Prompt != "" {
+	if turn.Continue && turn.Prompt != "" {
 		return errors.New("--continue takes no prompt; to send one to an existing thread, use --resume THREAD")
 	}
 	return nil
 }
 
-// readOperands reads the positional arguments of send into spec: the sandbox, and the prompt when
+// readOperands reads the positional arguments of send into turn: the sandbox, and the prompt when
 // one is given.
-func readOperands(spec *sandbox.SendSpec, args []string) error {
+func readOperands(turn *agent.Turn, args []string) error {
 	switch len(args) {
 	case 0:
 		return errors.New("requires at least 1 argument")
 	case 1:
-		spec.Target = args[0]
+		turn.Target = args[0]
 	case 2:
 		// An empty prompt is a caller whose variable was empty, not a request for a terminal:
 		// attaching one would hang on an input nobody is typing.
 		if args[1] == "" {
 			return errors.New("the prompt is empty")
 		}
-		spec.Target, spec.Prompt = args[0], args[1]
+		turn.Target, turn.Prompt = args[0], args[1]
 	default:
 		return fmt.Errorf("takes one prompt, quote it as a single argument (got %q)", args[2])
 	}

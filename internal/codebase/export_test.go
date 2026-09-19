@@ -1,4 +1,4 @@
-package receiver
+package codebase
 
 // The argument builders, exposed to the tests of the package.
 var (

@@ -1,7 +1,8 @@
-// Package receiver fetches a forge repository on the host, with the access its owner already has,
-// into a bare repository that nothing of the forge configures, and hands it over as a bundle. It is
-// the receiver on the way into the sandbox.
-package receiver
+// Package codebase brings a forge repository to the codebase the agent works on: it fetches it on
+// the host with the access its owner already has, into a bare repository that nothing of the forge
+// configures, hands it over as a bundle, and says which commands plant that bundle in the sandbox.
+// Neither end lets a credential, a hook or a remote through.
+package codebase
 
 import (
 	"bytes"

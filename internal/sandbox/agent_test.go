@@ -9,6 +9,9 @@ import (
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
+// The sandbox the tests of the package name.
+const demo = "demo"
+
 func TestAgentArgs(t *testing.T) {
 	t.Parallel()
 

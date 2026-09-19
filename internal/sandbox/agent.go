@@ -12,11 +12,15 @@ import (
 // container, relayed right above it, says which it was.
 var ErrAgentCheck = errors.New("the agent did not answer")
 
+// agentProgram is the coding agent of the image, named here as the exec that checks it needs it;
+// what the agent is asked to do for a turn is built in internal/agent.
+const agentProgram = "claude"
+
 // agentArgs returns the container exec argument array that asks the agent of target for its
 // version: the program itself, found on the PATH of the image as a send would find it, and the
 // cheapest thing it does (measured at 0.4 s).
 func agentArgs(target string) []string {
-	return []string{execVerb, target, agent, "--version"}
+	return []string{execVerb, target, agentProgram, "--version"}
 }
 
 // CheckAgent verifies that the sandbox target carries the agent, right after its creation and
@@ -34,7 +38,7 @@ func (e *Engine) CheckAgent(ctx context.Context, target string) error {
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("%w: %s --version exited %d", ErrAgentCheck, agent, code)
+		return fmt.Errorf("%w: %s --version exited %d", ErrAgentCheck, agentProgram, code)
 	}
 	return nil
 }

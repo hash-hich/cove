@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/hich-hich/cove/internal/agent"
 	"gitlab.com/hich-hich/cove/internal/cli"
 	"gitlab.com/hich-hich/cove/internal/image"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
@@ -283,35 +284,35 @@ func TestParseSend(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
-		want sandbox.SendSpec
+		want agent.Turn
 	}{
-		{name: "attached", args: []string{demo}, want: sandbox.SendSpec{Target: demo}},
+		{name: "attached", args: []string{demo}, want: agent.Turn{Target: demo}},
 		{
 			name: "driven",
 			args: []string{demo, "fix the build"},
-			want: sandbox.SendSpec{Target: demo, Prompt: "fix the build"},
+			want: agent.Turn{Target: demo, Prompt: "fix the build"},
 		},
 		{
 			name: "resume",
 			args: []string{"-r", thread, demo, "go on"},
-			want: sandbox.SendSpec{Target: demo, Prompt: "go on", Thread: thread, Resume: true},
+			want: agent.Turn{Target: demo, Prompt: "go on", Thread: thread, Resume: true},
 		},
 		{
 			name: longForms,
 			args: []string{"--resume=" + review, "--name=ignored", demo},
-			want: sandbox.SendSpec{Target: demo, Thread: review, Resume: true, Name: "ignored"},
+			want: agent.Turn{Target: demo, Thread: review, Resume: true, Name: "ignored"},
 		},
-		{name: "name", args: []string{"-n", review, demo}, want: sandbox.SendSpec{Target: demo, Name: review}},
-		{name: "continue", args: []string{"-c", demo}, want: sandbox.SendSpec{Target: demo, Continue: true}},
+		{name: "name", args: []string{"-n", review, demo}, want: agent.Turn{Target: demo, Name: review}},
+		{name: "continue", args: []string{"-c", demo}, want: agent.Turn{Target: demo, Continue: true}},
 		{
 			name: "continue, long form and named",
 			args: []string{"--continue", "--name", review, demo},
-			want: sandbox.SendSpec{Target: demo, Continue: true, Name: review},
+			want: agent.Turn{Target: demo, Continue: true, Name: review},
 		},
 		{
 			name: "a prompt is not parsed for flags",
 			args: []string{demo, "--help me"},
-			want: sandbox.SendSpec{Target: demo, Prompt: "--help me"},
+			want: agent.Turn{Target: demo, Prompt: "--help me"},
 		},
 	}
 
@@ -319,10 +320,10 @@ func TestParseSend(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			spec, err := cli.ParseSend(tt.args)
+			turn, err := cli.ParseSend(tt.args)
 
 			require.NoError(t, err)
-			require.Equal(t, tt.want, spec)
+			require.Equal(t, tt.want, turn)
 		})
 	}
 }
@@ -371,21 +372,21 @@ func TestAnnounced(t *testing.T) {
 	tests := []struct {
 		name  string
 		stdin io.Reader
-		spec  sandbox.SendSpec
+		spec  agent.Turn
 		vms   []sandbox.VM
 		want  bool
 	}{
-		{name: "attached to a running sandbox", stdin: tty, spec: sandbox.SendSpec{Target: demo}, vms: running, want: true},
+		{name: "attached to a running sandbox", stdin: tty, spec: agent.Turn{Target: demo}, vms: running, want: true},
 		{
 			name:  "driven",
 			stdin: tty,
-			spec:  sandbox.SendSpec{Target: demo, Prompt: "go"},
+			spec:  agent.Turn{Target: demo, Prompt: "go"},
 			vms:   running,
 		},
-		{name: "stopped sandbox", stdin: tty, spec: sandbox.SendSpec{Target: demo}, vms: stopped},
-		{name: "unknown sandbox", stdin: tty, spec: sandbox.SendSpec{Target: "other"}, vms: running},
-		{name: "stdin is not a terminal", stdin: strings.NewReader(""), spec: sandbox.SendSpec{Target: demo}, vms: running},
-		{name: "no stdin at all", spec: sandbox.SendSpec{Target: demo}, vms: running},
+		{name: "stopped sandbox", stdin: tty, spec: agent.Turn{Target: demo}, vms: stopped},
+		{name: "unknown sandbox", stdin: tty, spec: agent.Turn{Target: "other"}, vms: running},
+		{name: "stdin is not a terminal", stdin: strings.NewReader(""), spec: agent.Turn{Target: demo}, vms: running},
+		{name: "no stdin at all", spec: agent.Turn{Target: demo}, vms: running},
 	}
 
 	for _, tt := range tests {

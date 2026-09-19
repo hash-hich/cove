@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
+	"gitlab.com/hich-hich/cove/internal/codebase"
 	"gitlab.com/hich-hich/cove/internal/image"
-	"gitlab.com/hich-hich/cove/internal/receiver"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
@@ -101,8 +101,8 @@ func create(ctx context.Context, a *App, opts RunOptions) (string, int) {
 // from, or the exit code of the failure it reported. The forge is asked for its default branch
 // only when none was given: a branch given is named in the fetch, which git refuses before any
 // download when the forge does not have it.
-func fetch(ctx context.Context, a *App, opts RunOptions) (string, *receiver.Repo, int) {
-	git := &receiver.Git{Stderr: a.Stderr}
+func fetch(ctx context.Context, a *App, opts RunOptions) (string, *codebase.Repo, int) {
+	git := &codebase.Git{Stderr: a.Stderr}
 	branch := opts.Spec.Branch
 	if branch == "" {
 		var err error
@@ -122,7 +122,7 @@ func fetch(ctx context.Context, a *App, opts RunOptions) (string, *receiver.Repo
 
 // launch creates the VM through engine, checks that it carries the agent and seeds it, and returns
 // its name, or the exit code of the failure it reported.
-func launch(ctx context.Context, a *App, engine *sandbox.Engine, opts RunOptions, repo *receiver.Repo) (string, int) {
+func launch(ctx context.Context, a *App, engine *sandbox.Engine, opts RunOptions, repo *codebase.Repo) (string, int) {
 	// The creation itself is never interrupted. A signal to the container CLI leaves the VM it was
 	// starting behind, and the name that CLI prints when it is done is the only handle on
 	// that VM: without it a signal here would leave a micro-VM running with nobody able to name it.
@@ -143,7 +143,7 @@ func launch(ctx context.Context, a *App, engine *sandbox.Engine, opts RunOptions
 	if err := engine.CheckAgent(ctx, name); err != nil {
 		return "", fail(ctx, a, abort(ctx, engine, name, fmt.Errorf("%s: %w", opts.Spec.Image, err)))
 	}
-	spec := sandbox.SeedSpec{Target: name, Branch: opts.Spec.Branch, Author: agentAuthor, Email: agentEmail}
+	spec := codebase.SeedSpec{Target: name, Branch: opts.Spec.Branch, Author: agentAuthor, Email: agentEmail}
 	if err := seed(ctx, engine, repo, spec); err != nil {
 		return "", fail(ctx, a, abort(ctx, engine, name, err))
 	}
@@ -174,7 +174,7 @@ func fail(ctx context.Context, a *App, err error) int {
 
 // seed streams the bundle of repo into the sandbox: the receiver writes it on one end of a pipe
 // while the steps of spec read the other, so that it never lands on the disk of the host.
-func seed(ctx context.Context, engine *sandbox.Engine, repo *receiver.Repo, spec sandbox.SeedSpec) error {
+func seed(ctx context.Context, engine *sandbox.Engine, repo *codebase.Repo, spec codebase.SeedSpec) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	pr, pw := io.Pipe()
@@ -259,12 +259,12 @@ func parseRun(args []string) (RunOptions, error) {
 var runUsage = `Usage: cove run [OPTIONS] URL
 
 Create a sandbox: a micro-VM from an image carrying the agent, started detached
-and kept alive until it is stopped, with the repository at URL in ` + sandbox.Work + `.
+and kept alive until it is stopped, with the repository at URL in ` + codebase.Work + `.
 The whole repository is there, every branch and tag with its history, checked
 out on the branch asked for or the default one of the repository, and without a
 remote: the agent cannot reach the forge. The repository is read with the access
 this machine already has, which does not enter the VM. Prints the name of the VM
-once ` + sandbox.Work + ` is ready. Every instruction to the agent is a separate command.
+once ` + codebase.Work + ` is ready. Every instruction to the agent is a separate command.
 
 The image is ` + image.DefaultImage + `, built from images/sandbox, unless --image names
 another one, such as a profile built on it (images/go). A name that carries no
@@ -282,7 +282,7 @@ Options:
   -m, --memory string   Memory limit with a suffix, e.g. 512M or 4G
   -e, --env list        Set environment variables, KEY=VALUE or KEY to inherit from the host
 
-Exit codes: 0 once ` + sandbox.Work + ` is ready; 2 on a usage error; 125 when cove could not
+Exit codes: 0 once ` + codebase.Work + ` is ready; 2 on a usage error; 125 when cove could not
 create the sandbox, before the VM or after it; the message of git or container
 is on stderr. A sandbox that could not be given its codebase is removed, and a
 VM that could not be removed is named in the message.

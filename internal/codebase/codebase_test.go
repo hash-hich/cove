@@ -1,4 +1,4 @@
-package receiver_test
+package codebase_test
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/hich-hich/cove/internal/receiver"
+	"gitlab.com/hich-hich/cove/internal/codebase"
 )
 
 // The placeholders the argv tests use for the receiver, its hooks directory and the forge.
@@ -44,30 +44,30 @@ func TestArgs(t *testing.T) {
 	}{
 		{
 			name: "resolve the default branch",
-			args: receiver.ResolveArgs(url),
+			args: codebase.ResolveArgs(url),
 			want: "-c protocol.file.allow=never -c fetch.fsckObjects=true -c fetch.recurseSubmodules=no" +
 				" ls-remote --symref " + url + " HEAD",
 		},
 		{
 			name: "init",
-			args: receiver.InitArgs(dir, hooks),
+			args: codebase.InitArgs(dir, hooks),
 			want: "--git-dir=" + dir + " " + options + " init -q --bare --template=" + hooks,
 		},
 		{
 			name: "fetch",
-			args: receiver.FetchArgs(dir, hooks, url, feature, false),
+			args: codebase.FetchArgs(dir, hooks, url, feature, false),
 			want: "--git-dir=" + dir + " " + options + " fetch -q --no-write-fetch-head " + url +
 				" +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/* +refs/heads/feature:refs/heads/feature",
 		},
 		{
 			name: "fetch with progress",
-			args: receiver.FetchArgs(dir, hooks, url, feature, true),
+			args: codebase.FetchArgs(dir, hooks, url, feature, true),
 			want: "--git-dir=" + dir + " " + options + " fetch -q --progress --no-write-fetch-head " + url +
 				" +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/* +refs/heads/feature:refs/heads/feature",
 		},
 		{
 			name: "bundle",
-			args: receiver.BundleArgs(dir, hooks),
+			args: codebase.BundleArgs(dir, hooks),
 			want: "--git-dir=" + dir + " " + options + " bundle create -q - --branches --tags",
 		},
 	}
@@ -93,16 +93,16 @@ func TestParseResolve(t *testing.T) {
 		wantErr error
 	}{
 		{name: "default branch", out: "ref: refs/heads/main\tHEAD\n" + sha + "\tHEAD\n", want: "main"},
-		{name: "detached head", out: sha + "\tHEAD\n", wantErr: receiver.ErrNoDefaultBranch},
-		{name: "empty repository", out: "", wantErr: receiver.ErrNoDefaultBranch},
-		{name: "a branch is not HEAD", out: sha + "\t" + feat + "\n", wantErr: receiver.ErrNoDefaultBranch},
+		{name: "detached head", out: sha + "\tHEAD\n", wantErr: codebase.ErrNoDefaultBranch},
+		{name: "empty repository", out: "", wantErr: codebase.ErrNoDefaultBranch},
+		{name: "a branch is not HEAD", out: sha + "\t" + feat + "\n", wantErr: codebase.ErrNoDefaultBranch},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := receiver.ParseResolve(tt.out)
+			got, err := codebase.ParseResolve(tt.out)
 
 			require.ErrorIs(t, err, tt.wantErr)
 			require.Equal(t, tt.want, got)
@@ -115,7 +115,7 @@ func TestResolve(t *testing.T) {
 
 	forge := newForge(t, true)
 
-	got, err := (&receiver.Git{}).Resolve(t.Context(), forge.url)
+	got, err := (&codebase.Git{}).Resolve(t.Context(), forge.url)
 
 	require.NoError(t, err)
 	require.Equal(t, branch, got)
@@ -130,7 +130,7 @@ func TestResolveRefusesALocalPath(t *testing.T) {
 
 	for _, path := range []string{forge.gitDir, "file://" + forge.gitDir} {
 		var stderr bytes.Buffer
-		_, err := (&receiver.Git{Stderr: &stderr}).Resolve(t.Context(), path)
+		_, err := (&codebase.Git{Stderr: &stderr}).Resolve(t.Context(), path)
 
 		require.Error(t, err)
 		require.Contains(t, stderr.String(), "not allowed")
@@ -143,7 +143,7 @@ func TestResolveUnreachable(t *testing.T) {
 	forge := newForge(t, false)
 
 	var stderr bytes.Buffer
-	_, err := (&receiver.Git{Stderr: &stderr}).Resolve(t.Context(), forge.server.URL+"/nope.git")
+	_, err := (&codebase.Git{Stderr: &stderr}).Resolve(t.Context(), forge.server.URL+"/nope.git")
 
 	require.Error(t, err)
 	require.NotEmpty(t, stderr.String())
@@ -156,11 +156,11 @@ func TestFetch(t *testing.T) {
 
 	forge := newForge(t, true)
 
-	repo, err := (&receiver.Git{}).Fetch(t.Context(), forge.url, feature)
+	repo, err := (&codebase.Git{}).Fetch(t.Context(), forge.url, feature)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, repo.Close()) })
 
-	gitDir := receiver.GitDir(repo)
+	gitDir := codebase.GitDir(repo)
 	require.Equal(t, []string{feat, main, v1}, refs(t, gitDir))
 	require.Equal(t, "2", strings.TrimSpace(git(t, "--git-dir="+gitDir, "rev-list", "--count", main)))
 	require.NotContains(t, git(t, "--git-dir="+gitDir, "config", "--list", "--local"), "remote.")
@@ -175,7 +175,7 @@ func TestFetchUnknownBranch(t *testing.T) {
 	forge := newForge(t, true)
 
 	var stderr bytes.Buffer
-	_, err := (&receiver.Git{Stderr: &stderr}).Fetch(t.Context(), forge.url, "nope")
+	_, err := (&codebase.Git{Stderr: &stderr}).Fetch(t.Context(), forge.url, "nope")
 
 	require.Error(t, err)
 	require.Contains(t, stderr.String(), "couldn't find remote ref refs/heads/nope")
@@ -198,7 +198,7 @@ func TestBundleAndClose(t *testing.T) {
 			t.Parallel()
 
 			forge := newForge(t, tt.rich)
-			repo, err := (&receiver.Git{}).Fetch(t.Context(), forge.url, branch)
+			repo, err := (&codebase.Git{}).Fetch(t.Context(), forge.url, branch)
 			require.NoError(t, err)
 
 			bundle := filepath.Join(t.TempDir(), "cove.bundle")
@@ -211,7 +211,7 @@ func TestBundleAndClose(t *testing.T) {
 			require.Equal(t, tt.want, heads(t, bundle))
 
 			require.NoError(t, repo.Close())
-			require.NoDirExists(t, receiver.Dir(repo))
+			require.NoDirExists(t, codebase.Dir(repo))
 			// Closing twice is not an error: Fetch closes on failure and the caller closes too.
 			require.NoError(t, repo.Close())
 		})
@@ -234,7 +234,7 @@ func TestFetchRefusesAnObjectGitCloneWouldAccept(t *testing.T) {
 	git(t, "clone", "-q", "--bare", forge.url, filepath.Join(t.TempDir(), "plain.git"))
 
 	var stderr bytes.Buffer
-	_, err := (&receiver.Git{Stderr: &stderr}).Fetch(t.Context(), forge.url, branch)
+	_, err := (&codebase.Git{Stderr: &stderr}).Fetch(t.Context(), forge.url, branch)
 
 	require.Error(t, err)
 	require.Contains(t, stderr.String(), "missingSpaceBeforeEmail")
@@ -290,13 +290,13 @@ func TestFetchLeavesTheHooksOfTheOwner(t *testing.T) {
 	require.FileExists(t, log)
 	require.NoError(t, os.Remove(log))
 
-	repo, err := (&receiver.Git{}).Fetch(t.Context(), forge.url, branch)
+	repo, err := (&codebase.Git{}).Fetch(t.Context(), forge.url, branch)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, repo.Close()) })
 	require.NoError(t, repo.Bundle(t.Context(), &bytes.Buffer{}))
 
 	require.NoFileExists(t, log)
-	require.NoDirExists(t, filepath.Join(receiver.GitDir(repo), "hooks"))
+	require.NoDirExists(t, filepath.Join(codebase.GitDir(repo), "hooks"))
 }
 
 // forge is a repository served over HTTP by the git of the host, as a forge would.
@@ -393,7 +393,7 @@ func TestFetchWithoutAStderrDoesNotPanic(t *testing.T) {
 
 	forge := newForge(t, false)
 
-	_, err := (&receiver.Git{}).Fetch(t.Context(), forge.server.URL+"/nope.git", branch)
+	_, err := (&codebase.Git{}).Fetch(t.Context(), forge.server.URL+"/nope.git", branch)
 
 	require.Error(t, err)
 }
@@ -410,12 +410,12 @@ func TestFetchIgnoresAnInheritedObjectDirectory(t *testing.T) {
 	}
 	t.Setenv("GIT_OBJECT_DIRECTORY", elsewhere)
 
-	repo, err := (&receiver.Git{}).Fetch(t.Context(), forge.url, branch)
+	repo, err := (&codebase.Git{}).Fetch(t.Context(), forge.url, branch)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, repo.Close()) })
 
 	require.Empty(t, files(t, elsewhere), "objects of the forge outside the receiver")
-	require.NotEmpty(t, files(t, filepath.Join(receiver.GitDir(repo), "objects")))
+	require.NotEmpty(t, files(t, filepath.Join(codebase.GitDir(repo), "objects")))
 	require.NoError(t, repo.Bundle(t.Context(), &bytes.Buffer{}))
 }
 
@@ -442,12 +442,12 @@ func files(t *testing.T, dir string) []string {
 func TestTranscriptKeepsTheEnd(t *testing.T) {
 	t.Parallel()
 
-	var said receiver.Transcript
+	var said codebase.Transcript
 	_, err := io.WriteString(&said, strings.Repeat("Receiving objects:  42%\r", 4096))
 	require.NoError(t, err)
 	_, err = io.WriteString(&said, "error: object abc: badTimezone\nfatal: fsck error in packed object\n")
 	require.NoError(t, err)
 
-	require.True(t, receiver.Contains(&said, "fsck error"))
-	require.LessOrEqual(t, len(receiver.Kept(&said)), receiver.Limit)
+	require.True(t, codebase.Contains(&said, "fsck error"))
+	require.LessOrEqual(t, len(codebase.Kept(&said)), codebase.Limit)
 }
