@@ -7,14 +7,12 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"gitlab.com/hich-hich/cove/internal/image"
 )
 
 // ErrBranchLabel reports a branch that cannot be the label of a VM.
 var ErrBranchLabel = errors.New("cannot label the branch")
-
-// DefaultImage is the sandbox image when run names none, built from images/sandbox and stored
-// locally only. A profile built on it (images/go) is named at run instead.
-const DefaultImage = "cove-sandbox:local"
 
 // LabelKey and LabelValue mark the VMs cove launched, so that cove can tell them apart from the
 // other VMs of the host (Apple's builder VM carries com.apple.container.plugin=builder the same
@@ -45,7 +43,7 @@ func CheckBranch(branch string) error {
 
 // Spec describes a sandbox to launch: the options the user may set on top of the fixed process.
 type Spec struct {
-	// Image is the image of the VM; empty means DefaultImage.
+	// Image is the image of the VM; empty means image.DefaultImage.
 	Image string
 	// Name is the VM name; empty lets container generate one.
 	Name string
@@ -98,5 +96,5 @@ func (s Spec) Args() []string {
 	for _, env := range s.Env {
 		args = append(args, "-e", env)
 	}
-	return append(args, "--", cmp.Or(s.Image, DefaultImage), "sleep", "infinity")
+	return append(args, "--", cmp.Or(s.Image, image.DefaultImage), "sleep", "infinity")
 }

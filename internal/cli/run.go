@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"gitlab.com/hich-hich/cove/internal/image"
 	"gitlab.com/hich-hich/cove/internal/receiver"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
@@ -212,7 +213,7 @@ func parseRun(args []string) (RunOptions, error) {
 	fs.StringVar(&opts.Spec.Branch, "b", "", "")
 	fs.StringVar(&opts.Spec.Branch, "branch", "", "")
 	fs.StringVar(&opts.Spec.Name, "name", "", "")
-	fs.StringVar(&opts.Spec.Image, "image", sandbox.DefaultImage, "")
+	fs.StringVar(&opts.Spec.Image, "image", image.DefaultImage, "")
 	fs.BoolVar(&rm, "rm", false, "")
 	fs.BoolVar(&keep, "keep", false, "")
 	fs.IntVar(&opts.Spec.CPUs, "cpus", 0, "")
@@ -265,7 +266,7 @@ remote: the agent cannot reach the forge. The repository is read with the access
 this machine already has, which does not enter the VM. Prints the name of the VM
 once ` + sandbox.Work + ` is ready. Every instruction to the agent is a separate command.
 
-The image is ` + sandbox.DefaultImage + `, built from images/sandbox, unless --image names
+The image is ` + image.DefaultImage + `, built from images/sandbox, unless --image names
 another one, such as a profile built on it (images/go). A name that carries no
 registry is never pulled: the image must be in the local store. One that names
 its registry is pulled from it when absent. A sandbox whose image does not
@@ -274,7 +275,7 @@ carry the agent is removed.
 Options:
   -b, --branch string   Branch to start from; the default branch of the repository otherwise
       --name string     Assign a name to the VM; container picks one otherwise
-      --image string    Image of the VM (default ` + sandbox.DefaultImage + `)
+      --image string    Image of the VM (default ` + image.DefaultImage + `)
       --rm              Remove the VM when it stops (default)
       --keep            Keep the stopped VM for inspection instead
       --cpus int        Number of CPUs

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/hich-hich/cove/internal/cli"
+	"gitlab.com/hich-hich/cove/internal/image"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
@@ -192,7 +193,7 @@ func TestParseRun(t *testing.T) {
 	t.Parallel()
 
 	// base is what run parses when no flag is given: the default image and nothing else.
-	base := sandbox.Spec{Image: sandbox.DefaultImage}
+	base := sandbox.Spec{Image: image.DefaultImage}
 	tests := []struct {
 		name string
 		args []string

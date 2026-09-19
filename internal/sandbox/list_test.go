@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/hich-hich/cove/internal/image"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
@@ -42,13 +43,13 @@ var store = []sandbox.VM{
 	},
 	{
 		ID: runSB, Labels: sandboxLabels, State: running,
-		Image: sandbox.DefaultImage, OS: linux, Architecture: arm64,
+		Image: image.DefaultImage, OS: linux, Architecture: arm64,
 		IPv4Address: "192.168.64.152/24", CPUs: 4, MemoryInBytes: 1073741824,
 		StartedDate: "2026-09-08T15:13:38Z",
 	},
 	{
 		ID: keepSB, Labels: sandboxLabels, State: stopped,
-		Image: sandbox.DefaultImage, OS: linux, Architecture: arm64,
+		Image: image.DefaultImage, OS: linux, Architecture: arm64,
 		CPUs: 4, MemoryInBytes: 1073741824,
 		StartedDate: "2026-09-08T15:13:42Z",
 	},

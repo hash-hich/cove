@@ -4,6 +4,11 @@ package image
 
 import "strings"
 
+// DefaultImage is the sandbox image when run names none, built from images/sandbox and stored
+// locally only. A profile built on it (images/go) is named at run instead. It carries no registry,
+// so NamesRegistry refuses it and it is never looked for on the internet.
+const DefaultImage = "cove-sandbox:local"
+
 // NamesRegistry reports whether image says where it comes from: its first path component is a
 // host, one with a dot or a port or localhost, the rule of docker and containerd. A bare name
 // (demo, org/repo:tag) is one of docker.io for them, which is never what a cove image is: such a

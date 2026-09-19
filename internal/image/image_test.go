@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/hich-hich/cove/internal/image"
-	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
 func TestNamesRegistry(t *testing.T) {
@@ -17,7 +16,7 @@ func TestNamesRegistry(t *testing.T) {
 		want  bool
 	}{
 		{image: "demo"},
-		{image: sandbox.DefaultImage},
+		{image: image.DefaultImage},
 		{image: "org/repo:tag"},
 		{image: "org/repo@sha256:0123456789abcdef"},
 		{image: ""},

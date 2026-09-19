@@ -40,7 +40,7 @@ type Engine struct {
 // fails, any other failure to ask the store, and nil otherwise. An empty image is the default one,
 // as Run reads it. The progress of a pull goes to the engine's Stdout.
 func (e *Engine) Preflight(ctx context.Context, img string) error {
-	img = cmp.Or(img, DefaultImage)
+	img = cmp.Or(img, image.DefaultImage)
 	bin, err := lookPath()
 	if err != nil {
 		return err
@@ -139,7 +139,7 @@ func checkImage(ctx context.Context, bin string, img string) error {
 		return fmt.Errorf("inspect %s: %s: %w", img, message, err)
 	}
 	dir := "<the directory of its Dockerfile>"
-	if img == DefaultImage {
+	if img == image.DefaultImage {
 		dir = "images/sandbox"
 	}
 	return fmt.Errorf("%w: %s (build it with: container build --platform linux/arm64 -t %s %s): %w",
