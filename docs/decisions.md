@@ -1,7 +1,23 @@
 # Decisions
 
-A log, newest first. Each entry says what was decided, why, and what was
-rejected.
+What is decided now and why, for the decisions that bear on the choices still
+to come. Not a history: git is the history. The file is maintained like code,
+an entry amended when what it decides changes, and removed once what it holds
+can serve nothing. Newest first. Each entry says what was decided, why, and
+what was rejected.
+
+## 2026-09-18: Apple `container` is no longer a backend of cove
+
+**Decided.** Supporting Apple `container` is no longer in the target, so the
+backend leaves the repository with `internal/sandbox`, which held it. `run`,
+`send`, `stop` and `list` keep their flags, their validation, their usage
+texts and their parsers, and each exits 125 once its arguments are checked,
+until a backend runs them again. The last commit where the backend runs is
+tagged `apple-container`.
+
+**Why.** Removing it leaves a healthier base than keeping it would. The
+project is young and no one runs cove, so the change is allowed to break:
+nothing is kept working for compatibility while the backend is replaced.
 
 ## 2026-09-18: dependencies are vendored
 
@@ -340,23 +356,6 @@ podman's 125 for an unknown name and its `--ignore`.
 `-e` first: a variable is a declared context entry, not a pass-through, and no
 credential travels this way.
 
-## 2026-09-08: a waiting process 1 behind the init of `container`
-
-**Decided.** The VM boots `sleep infinity` behind `--init`, a placeholder for
-a cove process inside the VM.
-
-**Why.** Nothing occupies the VM between two turns, and Linux treats process 1
-apart: a signal with a default action is not delivered to it, and the orphans
-of an `exec` are reparented to it. Measured on 1.3.1: without the init, `stop`
-waits its kill delay (5 s, exit 137) and leftovers stay zombies; with it,
-signals are forwarded, children reaped, and the exit code of the child is
-returned. GNU `sleep` accepts `infinity` because it parses a float, which the
-Debian base guarantees.
-
-**In the contract.** The lease of the VM, the duration cap and the relay of the agent's
-stdio to `logs` need a resident process; it lives in this slot, holds no
-secret, and everything it returns is untrusted.
-
 ## 2026-09-07: the sandbox image
 
 **Decided.** Debian trixie slim pinned by index digest, the native Claude Code
@@ -364,8 +363,8 @@ binary pinned by exact version and SHA256 with updates disabled, `git` and the
 tools the model reaches for on its own (`curl`, `jq`, `patch`, `procps`,
 `python3`), the agent as root with `/root` holding only the first-launch
 state of Claude Code, the repository at `/work`, no entrypoint, built locally
-as `cove-sandbox:local`. The detailed spec, the acceptance and the bump
-procedure are in [images/sandbox/README.md](../images/sandbox/README.md).
+as `cove-sandbox:local`. The detailed spec and the bump procedure are in
+[images/sandbox/README.md](../images/sandbox/README.md).
 
 **Why.** The image is the declared context: what it pins is what runs, and
 what the host would leak is absent rather than forbidden. A missing tool costs
@@ -390,49 +389,8 @@ image, a verification script (every check tested the Dockerfile against
 itself), uid 1000 kept with sudo (the refusal stays under `sudo claude`, and
 the friction with it), `CLAUDE_CODE_BUBBLEWRAP` as the variable that lifts the
 check (it names a mechanism the image does not have). Accepted limitations:
-apt packages are not pinned; `IS_SANDBOX` is undocumented, so the acceptance
-runs the flag as root at every bump.
+apt packages are not pinned; `IS_SANDBOX` is undocumented, so the flag is run
+as root again at every bump.
 
 **In the contract.** The image is named by digest; a project image extends
 this one with its toolchain.
-
-## 2026-09-07: driving Apple `container` by its CLI, and what was measured
-
-**Decided.** Cove runs the `container` CLI with argument arrays and parses only
-the JSON of `list` and `inspect`. The Swift framework is out of reach of Go
-without cgo, and the API server speaks only XPC.
-
-**Measured** on `container` 1.3.1, macOS 26.5.2, kata kernel 6.18.35, and
-relied upon by the code:
-
-- **Exit codes.** Every failure of the CLI is 1 with `Error:` on stderr,
-  indistinguishable from an exit 1 of the guest; the code of process 1 becomes
-  that of `run` (137 on kill, on `stop` after its delay, on `delete -f`, on
-  OOM). `stop a b` continues past an unknown name and exits 1; `inspect a b`
-  fails as a whole. The identifier is the name, exact, never a prefix.
-  `delete` refuses a running VM without `-f`. Without the image in the local
-  store, `run` queries docker.io and fails 401, hence an image check first.
-- **Orphans.** The VM belongs to a launchd service: `kill -9` of the CLI
-  leaves it running, `--rm` included; SIGINT or SIGTERM to the CLI is an XPC
-  error and the VM goes on. Destruction is an explicit verb, never a side
-  effect. This is why the lease of the contract exists.
-- **Network.** One address per VM in `192.168.64.0/24` on the NAT network
-  `default`, sequential, read from `list` after start. The host is reachable
-  at the gateway `192.168.64.1` only, on `bridge100`, which exists only while
-  a VM runs; a listener bound to the gateway answers the VM and is refused
-  from the LAN address and from `127.0.0.1`. The host never reaches the VM.
-  The LAN, the internet and the other VMs of the same network are reachable;
-  two NAT networks ignore each other, so one network per run isolates runs;
-  `--internal` cuts everything, gateway included. DNS is relayed by the
-  gateway. The single route of the contract is therefore pf on the host,
-  per run, to demonstrate.
-- **Bytes without a mount.** `cp` (writes as root), the stdin of `exec -i`
-  and the stdout of `exec`, all on a running VM; 300 MB in under a second each
-  way. Git reads a bundle only from a regular file.
-- **Terminal.** `-it` on `run` and `exec`, no `attach`; a host TTY is
-  required; the guest gets a PTY, the size is propagated, bytes pass raw,
-  Ctrl-C reaches the guest process.
-- **Resources.** `--cpus` (default 4) and `--memory` (default 1 GB); the guest
-  sees one more CPU and 100 MB more; exceeding memory is an OOM kill, 137.
-  Disk and duration have no flag: a sparse root filesystem of 513 GB, freed at
-  `delete`. Boot takes 3 to 5 s.

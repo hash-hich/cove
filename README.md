@@ -47,19 +47,15 @@ amend it, the next run goes further.
 
 ## Try it
 
-Requires macOS 26 on Apple Silicon, with Apple `container` installed and its
-system service started.
+The micro-VM backend is being rebuilt. `run`, `send`, `stop` and `list` still
+take their arguments and still tell you when one is wrong, but they have
+nothing to run them with: each exits 125 and creates nothing. What the binary
+carries out today is the image side, on any host:
 
 ```bash
-container build --platform linux/arm64 -t cove-sandbox:local images/sandbox
 go build -o bin/cove ./cmd/cove
 
-bin/cove run --name demo https://gitlab.com/you/repo.git  # a fresh micro-VM with the repository
-bin/cove send demo                                        # a terminal on the agent
-bin/cove send demo "fix the ci"                           # one turn, its JSON on stdout
-bin/cove list                                             # what is running
-bin/cove stop demo                                        # or: bin/cove stop --all
-bin/cove pull ghcr.io/you/image:tag                       # an image into ~/.cache/cove/images, by digest on stdout
+bin/cove pull ghcr.io/you/image:tag   # an image into ~/.cache/cove/images, by digest on stdout
 ```
 
 Go, with one dependency, go-containerregistry, justified in the decision log.

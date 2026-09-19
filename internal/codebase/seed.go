@@ -5,8 +5,10 @@ import "slices"
 // Work is the directory of the repository in the sandbox, owned by root like the agent.
 const Work = "/work"
 
-// bundlePath is where the bundle lands in the VM for the time of the fetch. It doubles the disk
-// space of the repository until it is removed; the agent does not run yet, so nothing races it.
+// bundlePath is where the bundle lands in the VM for the time of the fetch: git reads a bundle
+// only from a regular file, never from a pipe, so it is written down before it is fetched from
+// (measured). It doubles the disk space of the repository until it is removed; the agent does not
+// run yet, so nothing races it.
 const bundlePath = "/tmp/cove.bundle"
 
 // SeedSpec describes the seeding of Work in a sandbox that was just created: the bundle of the

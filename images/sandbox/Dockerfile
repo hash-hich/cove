@@ -78,7 +78,7 @@ COPY --chmod=0600 claude.json /root/.claude.json
 # trusted to compute it. IS_SANDBOX=1 is what lifts the refusal of
 # --dangerously-skip-permissions as root: measured on the pinned version, the
 # check is uid 0 and IS_SANDBOX not "1", and the variable is undocumented, so
-# the acceptance re-runs the flag as root at every bump (README.md).
+# the flag is run as root again at every bump (README.md).
 # DISABLE_UPDATES blocks background and manual updates so that the version
 # pinned above is the one that runs.
 ENV HOME=/root \

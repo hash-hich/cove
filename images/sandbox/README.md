@@ -1,8 +1,8 @@
 # Sandbox image
 
-Base OCI image booted by the cove micro-VM (Apple `container`, the backend of the workstation).
-It contains Claude Code, git, and the minimum needed to run them, and nothing
-from the host. The decisions below are summarised in the image entry of
+Base OCI image booted by the cove micro-VM. It contains Claude Code, git and
+the minimum needed to run them, and nothing from the host. The decisions below
+are summarised in the image entry of
 [docs/decisions.md](../../docs/decisions.md); this file is the detailed spec.
 
 ## Build
@@ -18,52 +18,6 @@ involved for now: every host that runs cove builds the image itself from this
 directory, which is what keeps the content reproducible from the repository
 alone.
 
-## Why there is no verification script
-
-The guarantees the image gives are structural, absence rather than
-prohibition: the Dockerfile copies nothing from the host, puts nothing in the
-home but Claude Code's first launch state and carries no credential. Nothing
-checks that better than reading its hundred lines, and the build already
-fails when the pinned checksum does not match. A verification script was
-written for this issue and removed on purpose: every check it ran tested the
-Dockerfile against itself, and its lists of paths and patterns were the kind
-of list that goes stale unnoticed.
-
-What can still let the host in is not the image but the way it is started:
-`container run` accepts `--volume`, `-e` and `-u`. Those flags live in the
-argument array cove will build, and that array is where a test belongs: a Go
-unit test asserting that no mount, no environment variable and no user
-override is passed. It comes with the issue that introduces the wrapper.
-
-## Acceptance
-
-Run once when the Dockerfile changes, and paste the output in the MR:
-
-```bash
-docker run --rm cove-sandbox:local claude --version   # the pinned version
-docker run --rm cove-sandbox:local id -u              # 0: the agent is root
-docker run --rm cove-sandbox:local git --version
-docker run --rm cove-sandbox:local env                # PATH, HOME, IS_SANDBOX, DISABLE_UPDATES only
-docker run --rm cove-sandbox:local ls -A /root        # .claude.json only
-docker run --rm cove-sandbox:local stat -c '%U %a' /root/.claude.json   # root 600
-docker run --rm cove-sandbox:local claude --dangerously-skip-permissions --print --output-format json -- ok   # JSON with is_error (no credential), not the refusal as root
-```
-
-Then the first launch, which no static check covers because the keys of
-`claude.json` are undocumented. On a fresh sandbox created by cove, with the
-credential the agent needs:
-
-```bash
-cove run --name t9 -e CLAUDE_CODE_OAUTH_TOKEN=...
-cove send t9                 # the prompt, with no theme, login, trust or bypass permissions dialog before it
-cove send t9 "Answer ok"     # JSON carrying a model answer, no setup or login error
-cove stop t9
-```
-
-A dialog showing up here means the pinned version reads other keys than the
-ones `claude.json` carries. The refusal as root showing up, in the driven line
-above or here, means it reads another variable than `IS_SANDBOX`.
-
 ## What the image contains
 
 | Item | Value |
@@ -78,8 +32,8 @@ above or here, means it reads another variable than `IS_SANDBOX`.
 | Entrypoint | none; the default command is the base image's `bash`, cove passes the command at run time |
 
 `/root` and `/work` are the contract for the repository transport: the
-repository is placed under `/work`, owned by root like the exec that fetches
-it, and Claude Code is started with `/work` as its working directory.
+repository is placed under `/work`, owned by root like the agent, and Claude
+Code is started with `/work` as its working directory.
 
 ## Decisions
 
@@ -131,9 +85,9 @@ rejected.
    configuration; the same user with sudo, which keeps the refusal under
    `sudo claude` and leaves the agent one more thing to remember;
    `CLAUDE_CODE_BUBBLEWRAP`, the other variable that lifts the check, which
-   names a sandbox mechanism the image does not have; a user override on
-   `container exec` by cove, since cove passes no user and the state of the
-   home follows the version pinned here, not the version of cove.
+   names a sandbox mechanism the image does not have; a user override by
+   cove, since cove passes no user and the state of the home follows the
+   version pinned here, not the version of cove.
 5. **Deliberately absent.** No credentials, no host path, no shell profile,
    no apt lists, no package cache, no `~/.claude` directory, `~/.ssh`,
    `~/.aws`, no `/Users`. The rule holds by absence: these paths do not exist,
@@ -148,19 +102,13 @@ rejected.
    every bump; the version is exposed by `claude --version` and by the
    `org.opencontainers.image.version` label.
 7. **Extension point.** A profile is an image built on this one, named at
-   `run` with `--image`, that adds what the definition of done of a project
-   needs (its runtime, its package manager, its linters), pinned. It is not a
+   run time, that adds what the definition of done of a project needs (its
+   runtime, its package manager, its linters), pinned. It is not a
    barrier: the agent installs what it wants during the run, and that
-   disappears with the VM. A profile must keep the **agent**, the only
-   program cove starts in the VM and the one thing `run` checks (a VM whose
-   image does not answer `claude --version` is removed); **`/work` as the
-   working directory**, where the repository is put; **the first launch state
-   of the agent** in its home, without which the first turn goes into dialogs
-   instead of answering; and **no command launched by default**, since cove
-   passes the whole command at start. Nothing else is controlled: the other
-   rules are documented, and the user of this image is not one of them, it
-   describes this image. A name without a registry (`cove-go:local`) is never
-   pulled: a profile is built on every host, after this image.
+   disappears with the VM. What a profile must keep is stated once, in the
+   image profiles entry of [docs/decisions.md](../../docs/decisions.md). A
+   name without a registry (`cove-go:local`) is never pulled: a profile is
+   built on every host, after this image.
    [images/go](../go/README.md) is the maintained example, Go and
    golangci-lint for cove itself.
 8. **Common tools in the base.** Besides `git`, the base ships `curl`, `jq`,
@@ -200,12 +148,10 @@ rejected.
     preset. The state lives in the image rather than being written by cove at
     `run`: it depends on the Claude Code version pinned here, not on the cove
     version, and a Go code path that writes into the VM could not be tested
-    without faking `container`. These keys are undocumented, which is why the
-    acceptance replays the first launch by hand at every bump. Measured on
-    2.1.236 without any credential: the attached prompt still shows, with
-    "Not logged in" in its status line, and a piloted turn returns a JSON
-    result with `is_error` and exit code 1, so the missing login never turns
-    into a dialog. Rejected:
+    without faking a backend. Measured on 2.1.236 without any credential: the
+    attached prompt still shows, with "Not logged in" in its status line, and
+    a piloted turn returns a JSON result with `is_error` and exit code 1, so
+    the missing login never turns into a dialog. Rejected:
     `CLAUDE_CONFIG_DIR` to keep `$HOME` literally empty, which moves the whole
     state elsewhere for the same result and adds a variable to the image.
 
@@ -235,14 +181,13 @@ rejected.
 3. Update `CLAUDE_CODE_VERSION` and `CLAUDE_CODE_SHA256` in the Dockerfile.
 4. For the base, take the current index digest of `debian:trixie-slim` on
    Docker Hub and update `DEBIAN_DIGEST`.
-5. Rebuild and run the acceptance commands, first launch included. A dialog
-   showing up means the new version reads other keys than the ones in
-   `claude.json`: measure what it writes after a real first launch, and
-   update `claude.json` in the same commit as the bump. The refusal as root
-   coming back means the new version reads another variable than
-   `IS_SANDBOX`, or another value: `grep -a 'root/sudo'` on the binary shows
-   the condition next to the message; update the `ENV` line in the same
-   commit.
+5. Rebuild, then start the agent once in the new image. A dialog showing up
+   means the new version reads other keys than the ones in `claude.json`:
+   measure what it writes after a real first launch, and update `claude.json`
+   in the same commit as the bump. The refusal as root coming back means the
+   new version reads another variable than `IS_SANDBOX`, or another value:
+   `grep -a 'root/sudo'` on the binary shows the condition next to the
+   message; update the `ENV` line in the same commit.
 
 ## Limitations
 
@@ -257,19 +202,17 @@ rejected.
   commit produce the same files but not the same digest: layer timestamps
   and the apt state differ by a few bytes. What is reproducible is the
   content (base by digest, binary by SHA256), not the image identifier.
-  Compare the acceptance output, not digests, between hosts.
 - **The tool list is a starting point.** It comes from one owner's usage
   history; the rule is to start restrictive and add a tool to the base only
   when real runs show it missing in every project.
 - **`IS_SANDBOX` is undocumented.** The variable and its check come from
   reading the binary of the pinned version, like the keys of the first launch
-  state, and the acceptance runs the flag as root at every bump for that
-  reason. The binary reads the variable in other places (its retry on an
+  state. The binary reads the variable in other places (its retry on an
   overloaded API, its detection of a sandbox runtime), whose effects were not
   measured.
 - **The first launch state is a snapshot.** Its keys are undocumented and
   can change with the pinned version; the only guard is the first launch
-  replayed in the acceptance. Runtime dependencies beyond starting the binary
+  replayed by hand at a bump. Runtime dependencies beyond starting the binary
   (for instance `procps` for process listing) are validated by real runs, not
   by this image.
 - **The manifest signature is checked at bump time, not at build time.** The

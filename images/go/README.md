@@ -1,42 +1,19 @@
 # Go profile
 
-The [base image](../sandbox/README.md) plus the Go toolchain and
-golangci-lint. A maintained profile, meant to be used as it is, whose only
-commitment is that cove builds, lints and tests in it: that is what the
-acceptance verifies, and nothing more is promised to other Go repositories.
-The rules every profile must keep are in the extension point of the base
-image README.
+The [base image](../sandbox/README.md) with the Go toolchain and
+golangci-lint added. A maintained profile, meant to be used as it is, whose
+only commitment is that cove builds, lints and tests in it; nothing more is
+promised to other Go repositories.
 
-## Build and use
+## Build
 
 ```bash
 docker build --platform linux/arm64 -t cove-sandbox:local images/sandbox   # the base, first
 docker build --platform linux/arm64 -t cove-go:local images/go
-cove run --image cove-go:local <URL>
 ```
 
 The tag follows the base image: local store only, no version in the tag, so
 that the command above does not change at every bump.
-
-## Acceptance
-
-Run once when the Dockerfile changes, and paste the output in the MR:
-
-```bash
-docker run --rm cove-go:local go version              # the pinned version
-docker run --rm cove-go:local golangci-lint version   # the pinned version
-docker run --rm cove-go:local id -u                   # 0, as the base image
-docker run --rm cove-go:local ls -A /root             # .claude.json only
-```
-
-Then the commitment itself, on a sandbox created by cove from the cove
-repository: its definition of done runs there as it runs on the workstation.
-
-```bash
-name=$(cove run --image cove-go:local ssh://git@gitlab.com/hich-hich/cove.git)
-container exec "$name" sh -c 'cd /work && go build ./... && golangci-lint run && go test ./...'
-cove stop "$name"
-```
 
 ## What the profile adds
 
@@ -76,10 +53,9 @@ state, `/work`, no entrypoint.
    extension point without repeating them.
 6. **Caches under `$HOME` at run time.** `go` and `golangci-lint` write their
    caches under `/root/.cache`, the module cache under `/root/go` and their
-   configuration under `/root/.config` during the run
-   (measured: those three next to `.claude.json` after the acceptance). The
-   home is no longer required to hold the first launch state alone: what a
-   profile must not do is break that state, and a cache next to it does not.
+   configuration under `/root/.config` during the run. The home is no longer
+   required to hold the first launch state alone: what a profile must not do
+   is break that state, and a cache next to it does not.
 
 ## Bumping the pins
 
@@ -89,8 +65,7 @@ state, `/work`, no entrypoint.
 2. golangci-lint: the checksums file of the release,
    `golangci-lint-<version>-checksums.txt` on the releases page; take the
    line of `golangci-lint-<version>-linux-arm64.tar.gz`.
-3. Update the four `ARG` values in the Dockerfile, rebuild and run the
-   acceptance, the commitment included.
+3. Update the four `ARG` values in the Dockerfile and rebuild.
 
 ## Limitations
 
@@ -100,8 +75,7 @@ state, `/work`, no entrypoint.
   is written.
 - **No procedure for the base.** The profile does not repeat the pinning
   and bump procedure of the base image for the apt layer: it inherits that
-  layer as it is, and the acceptance above is what stands in for a
-  verification.
+  layer as it is.
 - **linux/arm64 only.** Both checksums are per platform, as in the base
   image.
 - **No registry.** The profile is built on every host, after the base
