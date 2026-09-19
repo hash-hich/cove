@@ -31,7 +31,7 @@ Definition of done: `golangci-lint fmt` leaves no diff, `golangci-lint run && go
 <!-- Intended layout, no code yet: -->
 
 * `cmd/cove/`: the CLI entry point, wiring only.
-* `internal/<pkg>/`: one package per concern, not importable from outside the module.
+* `internal/<pkg>/`: one package per job, named after that job and not after a thing, not importable from outside the module.
 
 ## Rules
 
