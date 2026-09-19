@@ -2,8 +2,6 @@ package cli_test
 
 import (
 	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -12,7 +10,6 @@ import (
 	"gitlab.com/hich-hich/cove/internal/agent"
 	"gitlab.com/hich-hich/cove/internal/cli"
 	"gitlab.com/hich-hich/cove/internal/image"
-	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
 const (
@@ -91,7 +88,6 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "run empty image", args: runArgs("--image", "", repo), wantStderr: "--image must name an image"},
 		{name: "run negative cpus", args: runArgs("--cpus", "-1", repo), wantStderr: "must be positive"},
 		{name: "run no url", args: runArgs(), wantStderr: "requires 1 argument"},
-		{name: "run branch with =", args: runArgs("-b", "x=1", repo), wantStderr: "cannot label the branch"},
 		{name: "run command", args: runArgs(repo, "bash"), wantStderr: "takes no command"},
 		{name: "run git clone depth", args: runArgs("--depth", "1", repo), wantStderr: "not defined: -depth"},
 		{name: "stop no target", args: stopArgs(), wantStderr: "requires at least 1 argument"},
@@ -194,7 +190,7 @@ func TestParseRun(t *testing.T) {
 	t.Parallel()
 
 	// base is what run parses when no flag is given: the default image and nothing else.
-	base := sandbox.Spec{Image: image.DefaultImage}
+	base := cli.SandboxSpec{Image: image.DefaultImage}
 	tests := []struct {
 		name string
 		args []string
@@ -209,7 +205,7 @@ func TestParseRun(t *testing.T) {
 				"-e", "FOO=bar", "-e", "TERM", repo,
 			},
 			want: cli.RunOptions{
-				Spec: sandbox.Spec{
+				Spec: cli.SandboxSpec{
 					Image: goImage, Name: demo, Keep: true, CPUs: 2, Memory: "4G", Env: []string{"FOO=bar", "TERM"}, Branch: fix,
 				},
 				URL: repo,
@@ -219,7 +215,7 @@ func TestParseRun(t *testing.T) {
 			name: longForms,
 			args: []string{"--branch=fix", "--image=" + goImage, "--memory=4G", "--env=BAR=baz", repo},
 			want: cli.RunOptions{
-				Spec: sandbox.Spec{Image: goImage, Memory: "4G", Env: []string{"BAR=baz"}, Branch: fix},
+				Spec: cli.SandboxSpec{Image: goImage, Memory: "4G", Env: []string{"BAR=baz"}, Branch: fix},
 				URL:  repo,
 			},
 		},
@@ -243,24 +239,24 @@ func TestParseStop(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    []string
-		want    sandbox.StopSpec
+		want    cli.StopSpec
 		wantAll bool
 	}{
-		{name: "one target", args: []string{demo}, want: sandbox.StopSpec{Targets: []string{demo}}},
-		{name: "several targets", args: []string{"a", "b"}, want: sandbox.StopSpec{Targets: []string{"a", "b"}}},
-		{name: "all", args: []string{"--all"}, want: sandbox.StopSpec{}, wantAll: true},
-		{name: "all short", args: []string{"-a"}, want: sandbox.StopSpec{}, wantAll: true},
+		{name: "one target", args: []string{demo}, want: cli.StopSpec{Targets: []string{demo}}},
+		{name: "several targets", args: []string{"a", "b"}, want: cli.StopSpec{Targets: []string{"a", "b"}}},
+		{name: "all", args: []string{"--all"}, want: cli.StopSpec{}, wantAll: true},
+		{name: "all short", args: []string{"-a"}, want: cli.StopSpec{}, wantAll: true},
 		{
 			name: "every option",
 			args: []string{"-s", "SIGKILL", "-t", "30", demo},
-			want: sandbox.StopSpec{Targets: []string{demo}, Signal: "SIGKILL", Timeout: new(30)},
+			want: cli.StopSpec{Targets: []string{demo}, Signal: "SIGKILL", Timeout: new(30)},
 		},
 		{
 			name: longForms,
 			args: []string{"--signal=SIGINT", "--time=0", demo},
-			want: sandbox.StopSpec{Targets: []string{demo}, Signal: "SIGINT", Timeout: new(0)},
+			want: cli.StopSpec{Targets: []string{demo}, Signal: "SIGINT", Timeout: new(0)},
 		},
-		{name: "time left to container", args: []string{demo}, want: sandbox.StopSpec{Targets: []string{demo}}},
+		{name: "time left to the backend", args: []string{demo}, want: cli.StopSpec{Targets: []string{demo}}},
 	}
 
 	for _, tt := range tests {
@@ -359,43 +355,38 @@ func TestParseList(t *testing.T) {
 	}
 }
 
-func TestAnnounced(t *testing.T) {
+func TestVerbsWithoutABackend(t *testing.T) {
 	t.Parallel()
 
-	// A character device stands for the terminal a test has no way to open.
-	tty, err := os.Open(os.DevNull)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, tty.Close()) })
-	running := []sandbox.VM{{ID: demo, State: "running", Labels: map[string]string{sandbox.LabelKey: sandbox.LabelValue}}}
-	stopped := []sandbox.VM{{ID: demo, State: "stopped", Labels: map[string]string{sandbox.LabelKey: sandbox.LabelValue}}}
-
 	tests := []struct {
-		name  string
-		stdin io.Reader
-		spec  agent.Turn
-		vms   []sandbox.VM
-		want  bool
+		name string
+		args []string
 	}{
-		{name: "attached to a running sandbox", stdin: tty, spec: agent.Turn{Target: demo}, vms: running, want: true},
-		{
-			name:  "driven",
-			stdin: tty,
-			spec:  agent.Turn{Target: demo, Prompt: "go"},
-			vms:   running,
-		},
-		{name: "stopped sandbox", stdin: tty, spec: agent.Turn{Target: demo}, vms: stopped},
-		{name: "unknown sandbox", stdin: tty, spec: agent.Turn{Target: "other"}, vms: running},
-		{name: "stdin is not a terminal", stdin: strings.NewReader(""), spec: agent.Turn{Target: demo}, vms: running},
-		{name: "no stdin at all", spec: agent.Turn{Target: demo}, vms: running},
+		{name: "run creates nothing", args: runArgs(repo)},
+		{name: "send attached", args: sendArgs(demo)},
+		{name: "send driven", args: sendArgs(demo, "fix the ci")},
+		{name: "stop one target", args: stopArgs(demo)},
+		{name: "stop all", args: stopArgs("--all")},
+		{name: "list what runs", args: listArgs()},
+		{name: "ls alias", args: []string{"ls"}},
+		{name: "ps alias", args: []string{"ps"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := &cli.App{Stdin: tt.stdin, Stdout: io.Discard, Stderr: io.Discard}
+			var stdout, stderr bytes.Buffer
+			app := &cli.App{Stdout: &stdout, Stderr: &stderr}
 
-			require.Equal(t, tt.want, cli.Announced(app, tt.spec, tt.vms))
+			code := app.Run(tt.args)
+
+			// The arguments were valid, so no usage is shown: the caller learns that the command
+			// is well formed and, separately, that cove has nothing to run it with.
+			require.Equal(t, cli.ExitPreflight, code)
+			require.Empty(t, stdout.String())
+			require.Contains(t, stderr.String(), "not implemented yet")
+			require.NotContains(t, stderr.String(), "Usage:")
 		})
 	}
 }

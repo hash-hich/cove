@@ -18,8 +18,8 @@ import (
 
 // The exit codes of pull: the 1 of docker pull when what was tried failed, and 128 plus the number
 // of the signal, the convention of the shell, so that a script tells an interruption from a
-// failure. The 125 of the verbs that drive the container CLI does not apply: no other tool is
-// involved.
+// failure. The 125 of the verbs that need a micro-VM does not apply: pull talks to the registry
+// and writes the store, and no sandbox is involved.
 const (
 	exitFailed     = 1
 	exitInterrupt  = 130

@@ -1,22 +1,28 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-
-	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
-// exitRefused is the exit code when at least one target was refused or could not be stopped, as
-// docker's 1; container's own failures already use it.
-const exitRefused = 1
+// StopSpec describes a stop: the parsed command line of the verb, the VMs to stop and the options
+// the user may set.
+type StopSpec struct {
+	// Targets are the sandboxes to stop, by name or ID: an exact name, never a prefix.
+	Targets []string
+	// Signal is the signal to send; empty leaves the default of the backend.
+	Signal string
+	// Timeout is the number of seconds to wait before killing; nil leaves the default of the
+	// backend, and zero kills without waiting.
+	Timeout *int
+}
 
-// stopCommand stops sandboxes and returns the process exit code.
+// stopCommand parses the arguments of stop and returns the process exit code. Nothing is stopped:
+// the backend that would run the sandboxes is being replaced.
 func stopCommand(a *App, args []string) int {
-	spec, all, err := parseStop(args)
+	_, _, err := parseStop(args)
 	if errors.Is(err, flag.ErrHelp) {
 		_, _ = fmt.Fprint(a.Stdout, stopUsage)
 		return 0
@@ -26,51 +32,15 @@ func stopCommand(a *App, args []string) int {
 		printUsageError(a.Stderr, "stop", stopUsage)
 		return ExitUsage
 	}
-
-	ctx := context.Background()
-	vms, err := sandbox.List(ctx)
-	if err != nil {
-		_, _ = fmt.Fprintf(a.Stderr, "cove stop: %v\n", err)
-		return ExitPreflight
-	}
-	targets := screen(a, vms, spec.Targets, all)
-	spec.Targets = targets.Kept
-
-	code := 0
-	if len(spec.Targets) > 0 {
-		engine := &sandbox.Engine{Stdout: a.Stdout, Stderr: a.Stderr}
-		code, err = engine.Stop(ctx, spec)
-		if err != nil {
-			_, _ = fmt.Fprintf(a.Stderr, "cove stop: %v\n", err)
-			return ExitPreflight
-		}
-	}
-	if code == 0 && len(targets.Refused) > 0 {
-		return exitRefused
-	}
-	return code
+	return notImplemented(a, "stop")
 }
 
-// screen resolves the targets of stop against the store: the running sandboxes for an all, else
-// the names given minus the VMs that are not cove's, each reported on stderr. Cove never stops a
-// VM it did not launch.
-func screen(a *App, vms []sandbox.VM, names []string, all bool) sandbox.Screening {
-	if all {
-		return sandbox.Screening{Kept: sandbox.Running(vms)}
-	}
-	s := sandbox.Screen(vms, names)
-	for _, name := range s.Refused {
-		_, _ = fmt.Fprintf(a.Stderr, "cove stop: %s is not a cove sandbox\n", name)
-	}
-	return s
-}
-
-// parseStop turns the arguments of stop into a stop spec and whether every sandbox was asked for.
-// It returns flag.ErrHelp when help was asked for, and an error carrying the message to show on
-// any other usage error.
-func parseStop(args []string) (sandbox.StopSpec, bool, error) {
+// parseStop turns the arguments of stop into a stop spec and whether --all was given. It returns
+// flag.ErrHelp when help was asked for, and an error carrying the message to show on any other
+// usage error.
+func parseStop(args []string) (StopSpec, bool, error) {
 	var (
-		spec    sandbox.StopSpec
+		spec    StopSpec
 		all     bool
 		timeout int
 	)
@@ -89,7 +59,7 @@ func parseStop(args []string) (sandbox.StopSpec, bool, error) {
 		//nolint:wrapcheck // flag's messages are complete and name the flag; a prefix would only repeat them.
 		return spec, false, err
 	}
-	// Zero is a valid delay (kill at once), so only a flag actually given reaches container.
+	// Zero is a valid delay (kill at once), so only a flag actually given reaches the backend.
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "t" || f.Name == "time" {
 			spec.Timeout = &timeout
@@ -117,14 +87,18 @@ const stopUsage = `Usage: cove stop [OPTIONS] SANDBOX [SANDBOX...]
        cove stop --all
 
 Stop one or more sandboxes, given by name or ID. Prints the ID of each VM
-stopped. Only the VMs cove created are stopped: another VM of the store is
+stopped. Only the VMs cove created are stopped: another VM of the host is
 refused and left as is. A stopped VM is removed unless run kept it (--keep).
 
 Options:
   -a, --all             Stop every running sandbox of cove
   -s, --signal string   Signal to send to the VM
-  -t, --time int        Seconds to wait before killing the VM (default: the one of container, 5)
+  -t, --time int        Seconds to wait before killing the VM (default: the one of the backend)
+
+Not implemented yet: the micro-VM backend is being replaced. stop validates its
+arguments as described above, then exits 125 having stopped nothing. The exit
+codes below are the contract it comes back with.
 
 Exit codes: 0 when every target stopped; 1 when one was refused or unknown; 2
-on a usage error; 125 when cove could not run container.
+on a usage error; 125 when cove could not carry the command out.
 `

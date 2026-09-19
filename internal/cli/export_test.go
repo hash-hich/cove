@@ -14,6 +14,3 @@ var ParseSend = parseSend
 
 // ParsePull exposes parsePull to the tests of the package.
 var ParsePull = parsePull
-
-// Announced exposes announced to the tests of the package.
-var Announced = announced

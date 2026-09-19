@@ -1,20 +1,18 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"slices"
 
 	"gitlab.com/hich-hich/cove/internal/agent"
-	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
-// sendCommand drives the agent of a sandbox and returns the process exit code.
+// sendCommand parses the arguments of send and returns the process exit code. Nothing is sent: the
+// backend that would reach the agent is being replaced.
 func sendCommand(a *App, args []string) int {
-	turn, err := parseSend(args)
+	_, err := parseSend(args)
 	if errors.Is(err, flag.ErrHelp) {
 		_, _ = fmt.Fprint(a.Stdout, sendUsage)
 		return 0
@@ -24,49 +22,7 @@ func sendCommand(a *App, args []string) int {
 		printUsageError(a.Stderr, "send", sendUsage)
 		return ExitUsage
 	}
-
-	ctx := context.Background()
-	vms, err := sandbox.List(ctx)
-	if err != nil {
-		_, _ = fmt.Fprintf(a.Stderr, "cove send: %v\n", err)
-		return ExitPreflight
-	}
-	// Cove never talks to a VM it did not launch, as stop refuses one. A target it knows nothing
-	// about is left to container, which resolves IDs and reports the unknown ones itself.
-	if len(sandbox.Screen(vms, []string{turn.Target}).Refused) > 0 {
-		_, _ = fmt.Fprintf(a.Stderr, "cove send: %s is not a cove sandbox\n", turn.Target)
-		return exitRefused
-	}
-
-	if !turn.Resume && !turn.Continue {
-		turn.Thread = agent.NewThreadID()
-		// Driven, the identifier comes back in the session_id of the JSON, and stdout must carry
-		// that JSON and nothing else. Attached there is no JSON and stdout is the PTY, so stderr is
-		// the only place left to name the thread a later turn would resume.
-		if announced(a, turn, vms) {
-			_, _ = fmt.Fprintf(a.Stderr, "thread %s\n", turn.Thread)
-		}
-	}
-
-	// Stdin reaches the agent only when a terminal is attached to it: a driven turn reads nothing.
-	stdin := a.Stdin
-	if turn.Prompt != "" {
-		stdin = nil
-	}
-	engine := &sandbox.Engine{Stdin: stdin, Stdout: a.Stdout, Stderr: a.Stderr}
-	code, err := engine.Send(ctx, turn)
-	if err != nil {
-		_, _ = fmt.Fprintf(a.Stderr, "cove send: %v\n", err)
-		return ExitPreflight
-	}
-	return code
-}
-
-// announced reports whether the thread of turn is to be announced: a terminal is about to be
-// attached, on a sandbox that runs, from a terminal (container exec -t needs one). An
-// identifier for a thread that never opened would be resumed in vain.
-func announced(a *App, turn agent.Turn, vms []sandbox.VM) bool {
-	return turn.Prompt == "" && slices.Contains(sandbox.Running(vms), turn.Target) && terminal(a.Stdin)
+	return notImplemented(a, "send")
 }
 
 // parseSend turns the arguments of send into a turn. It returns flag.ErrHelp when help was
@@ -161,7 +117,10 @@ Options:
   -r, --resume string   Continue a thread, by UUID or by display name
   -n, --name string     Set a display name for the thread, to resume it by
 
-Exit codes: the one of container exec, which carries the one of the agent; 1
-when the target is not a sandbox of cove; 2 on a usage error; 125 when cove
-could not run container.
+Not implemented yet: the micro-VM backend is being replaced. send validates its
+arguments as described above, then exits 125 having reached nothing. The exit
+codes below are the contract it comes back with.
+
+Exit codes: the one of the agent; 1 when the target is not a sandbox of cove; 2
+on a usage error; 125 when cove could not carry the command out.
 `

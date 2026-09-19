@@ -1,16 +1,13 @@
 package cli
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-
-	"gitlab.com/hich-hich/cove/internal/sandbox"
 )
 
-// The output formats of list. Table is the default, as in container and docker.
+// The output formats of list. Table is the default, as in docker and podman.
 const (
 	formatTable = "table"
 	formatJSON  = "json"
@@ -26,9 +23,10 @@ type ListOptions struct {
 	Format string
 }
 
-// listCommand reports the sandboxes of cove and returns the process exit code.
+// listCommand parses the arguments of list and returns the process exit code. Nothing is reported:
+// there is no backend to hold a sandbox, so an empty list would say something cove cannot know.
 func listCommand(a *App, args []string) int {
-	opts, err := parseList(args)
+	_, err := parseList(args)
 	if errors.Is(err, flag.ErrHelp) {
 		_, _ = fmt.Fprint(a.Stdout, listUsage)
 		return 0
@@ -38,25 +36,7 @@ func listCommand(a *App, args []string) int {
 		printUsageError(a.Stderr, "list", listUsage)
 		return ExitUsage
 	}
-
-	vms, err := sandbox.List(context.Background())
-	if err != nil {
-		_, _ = fmt.Fprintf(a.Stderr, "cove list: %v\n", err)
-		return ExitPreflight
-	}
-	// The other VMs of the store are never reported, whatever --all says: cove lists what it
-	// launched, and nothing tells the user about Apple's builder.
-	sandboxes := sandbox.Sandboxes(vms, opts.All)
-
-	switch {
-	case opts.Format == formatJSON:
-		sandbox.WriteJSON(a.Stdout, sandboxes)
-	case opts.Quiet:
-		sandbox.WriteIDs(a.Stdout, sandboxes)
-	default:
-		sandbox.WriteTable(a.Stdout, sandboxes)
-	}
-	return 0
+	return notImplemented(a, "list")
 }
 
 // parseList turns the arguments of list into its options. It returns flag.ErrHelp when help was
@@ -91,8 +71,8 @@ func parseList(args []string) (ListOptions, error) {
 const listUsage = `Usage: cove list [OPTIONS]
 
 List the sandboxes of cove, running ones by default. Only the VMs cove created
-are reported: the store is shared with VMs that are not its own. The columns are
-those of container list.
+are reported: the host runs VMs that are not its own. The columns follow those
+of docker ps.
 
 Aliases: cove ls, cove ps
 
@@ -101,5 +81,10 @@ Options:
   -q, --quiet           Only print the sandbox IDs, one per line
       --format string   Output format, table or json (default table)
 
-Exit codes: 0; 2 on a usage error; 125 when cove could not run container.
+Not implemented yet: the micro-VM backend is being replaced. list validates its
+arguments as described above, then exits 125 rather than printing an empty
+list, which would claim that nothing runs. The exit codes below are the
+contract it comes back with.
+
+Exit codes: 0; 2 on a usage error; 125 when cove could not carry the command out.
 `

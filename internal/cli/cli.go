@@ -13,6 +13,10 @@ import (
 // ExitUsage is the exit code for a usage error, following the flag package convention.
 const ExitUsage = 2
 
+// ExitPreflight is the exit code when cove itself could not carry a command out, as the 125 of
+// docker run. Every verb that needs a micro-VM returns it while the backend is being replaced.
+const ExitPreflight = 125
+
 // App holds the streams of a cove invocation.
 type App struct {
 	// Stdin is only read by an attached send, which hands it to the terminal of the agent.
@@ -52,7 +56,7 @@ func (a *App) Run(args []string) int {
 	case "help":
 		printUsage(a.Stdout, fs)
 		return 0
-	// ls and ps are the names docker and container gave the same verb; both reach list, whose
+	// ls and ps are the names docker and podman gave the same verb; both reach list, whose
 	// help and errors carry the canonical name.
 	case "list", "ls", "ps":
 		return listCommand(a, fs.Args()[1:])
@@ -71,10 +75,17 @@ func (a *App) Run(args []string) int {
 	}
 }
 
+// notImplemented reports on stderr that verb has no backend to carry it out, and returns the exit
+// code to end with. The verb parsed its arguments first, so the caller learns that the command it
+// wrote is well formed, and learns it separately from the fact that cove cannot run it yet.
+func notImplemented(a *App, verb string) int {
+	_, _ = fmt.Fprintf(a.Stderr, "cove %s: not implemented yet: the micro-VM backend is being replaced\n", verb)
+	return ExitPreflight
+}
+
 // terminal reports whether stream, a reader or a writer, is a character device, which a terminal
-// is and a pipe or a file is not. It is an approximation of the real question, whether container
-// exec can attach a TTY: a redirection from another character device passes it, and then the exec
-// fails as it did before.
+// is and a pipe or a file is not. It is an approximation of the real question, whether the stream
+// renders what is written for a human: a redirection from another character device passes it.
 func terminal(stream any) bool {
 	f, ok := stream.(*os.File)
 	if !ok {
@@ -114,6 +125,9 @@ Commands:
   run     Create a sandbox from a repository
   send    Talk to the agent of a sandbox
   stop    Stop sandboxes
+
+run, send, stop and list are not implemented yet: the micro-VM backend is being
+replaced. They validate their arguments, then exit 125 having done nothing.
 `
 
 // printUsage writes the usage text and the flag defaults of fs to w.
