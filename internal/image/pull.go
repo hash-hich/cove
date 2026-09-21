@@ -54,7 +54,9 @@ type Result struct {
 	Digest v1.Hash
 	// Platform is the one the manifest is for.
 	Platform v1.Platform
-	// LayersTotal counts the layers of the manifest, LayersFetched those that were downloaded.
+	// LayersTotal counts the blobs the layers of the manifest name, a layer listed twice counting
+	// once, LayersFetched those that were downloaded. The store holds one blob per digest, so
+	// that is the unit a pull brings, and the two counts must be of the same unit to be compared.
 	LayersTotal   int
 	LayersFetched int
 	// Bytes counts what was downloaded, layers, config and manifest.
@@ -205,7 +207,7 @@ func (p *Puller) fetch(ctx context.Context, ref name.Reference, img v1.Image, re
 	if err != nil {
 		return registryError(ref, err)
 	}
-	res.LayersTotal = len(manifest.Layers)
+	res.LayersTotal = distinct(manifest.Layers)
 	if err := p.fetchLayers(ctx, ref, img, manifest.Layers, res); err != nil {
 		return err
 	}
@@ -288,11 +290,27 @@ func (p *Puller) record(ctx context.Context, ref name.Reference, img v1.Image, r
 	})
 }
 
-// missing returns the layers of descs the store lacks, and their size added up.
+// distinct counts the blobs the layers of descs name, a layer listed twice counting once.
+func distinct(descs []v1.Descriptor) int {
+	seen := make(map[v1.Hash]bool, len(descs))
+	for _, desc := range descs {
+		seen[desc.Digest] = true
+	}
+	return len(seen)
+}
+
+// missing returns the layers of descs the store lacks, each digest once, and their size added up.
+// A manifest may list the same layer twice, which is legal and happens: the store holds one blob
+// for it, so bringing it twice would be the same bytes twice.
 func (p *Puller) missing(descs []v1.Descriptor) ([]v1.Descriptor, int64, error) {
 	var missing []v1.Descriptor
 	var size int64
+	seen := make(map[v1.Hash]bool, len(descs))
 	for _, desc := range descs {
+		if seen[desc.Digest] {
+			continue
+		}
+		seen[desc.Digest] = true
 		has, err := p.Store.Has(desc.Digest)
 		if err != nil {
 			return nil, 0, err

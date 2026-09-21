@@ -538,6 +538,53 @@ func TestPullInterrupted(t *testing.T) {
 	requireComplete(t, root, img)
 }
 
+func TestPullDownloadsALayerListedTwiceOnce(t *testing.T) {
+	t.Parallel()
+
+	reg := serve(t)
+	ref := reg.ref(t, "org/repo:tag")
+	img := build(t, image.HostPlatform(), 2)
+	twice, err := img.LayerByDigest(layers(t, img)[0])
+	require.NoError(t, err)
+	img, err = mutate.AppendLayers(img, twice)
+	require.NoError(t, err)
+	publish(t, ref, img)
+	counts := reg.counting()
+	manifest, err := img.Manifest()
+	require.NoError(t, err)
+
+	res, _, err := pull(t, t.TempDir(), ref)
+
+	require.NoError(t, err)
+	// The manifest lists three layers for two blobs, and the count is of blobs: a pull that
+	// brought everything must not end on "2 of 3".
+	require.Equal(t, 2, res.LayersTotal)
+	require.Equal(t, 2, res.LayersFetched)
+	require.Equal(t, downloaded(t, img, 0), res.Bytes)
+	n, ok := counts.Load(manifest.Layers[0].Digest.String())
+	require.True(t, ok)
+	require.Equal(t, int64(1), n.(*atomic.Int64).Load()) //nolint:forcetypeassert // see counting.
+}
+
+// downloaded returns what a pull of img brings down when its first held layers are in the store
+// already: the layers after them, the config and the manifest.
+func downloaded(t *testing.T, img v1.Image, held int) int64 {
+	manifest, err := img.Manifest()
+	require.NoError(t, err)
+	size := manifest.Config.Size
+	raw, err := img.RawManifest()
+	require.NoError(t, err)
+	size += int64(len(raw))
+	seen := make(map[v1.Hash]bool)
+	for _, l := range manifest.Layers[held:] {
+		if !seen[l.Digest] {
+			seen[l.Digest] = true
+			size += l.Size
+		}
+	}
+	return size
+}
+
 func TestPullConcurrently(t *testing.T) {
 	t.Parallel()
 
