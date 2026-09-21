@@ -1,4 +1,4 @@
-package unpack_test
+package layer_test
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/hich-hich/cove/internal/unpack"
+	"gitlab.com/hich-hich/cove/internal/layer"
 )
 
 func TestPassesExtendedAttributesRaw(t *testing.T) {
@@ -14,7 +14,7 @@ func TestPassesExtendedAttributesRaw(t *testing.T) {
 
 	raw := "a\x00b\xff\xfe"
 	capability := "\x01\x00\x00\x02\x00\x00\x00\x00"
-	rec, counts, log := unpackAll(t,
+	rec, counts, log := applyAll(t,
 		xattrs(file("f", ""), map[string]string{"user.raw": raw, "security.capability": capability}),
 		xattrs(symlink("l", "f"), map[string]string{"trusted.overlay.redirect": "/f"}),
 		xattrs(link("h", "f"), map[string]string{"user.linked": "1"}),
@@ -29,7 +29,7 @@ func TestPassesExtendedAttributesRaw(t *testing.T) {
 		"link /h /f", `setxattr /h user.linked="1"`,
 		"mkdir /d drwxr-xr-x 0:0", `setxattr /d system.posix_acl_access="\x02\x00\x00\x00"`,
 	}, rec.calls)
-	require.Equal(t, unpack.Counts{}, counts)
+	require.Equal(t, layer.Counts{}, counts)
 	require.Empty(t, log)
 }
 
@@ -56,16 +56,16 @@ func TestCountsAnAttributeErofsWillNotRead(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			rec, counts, log := unpackAll(t, xattrs(file("f", ""), map[string]string{tt.name: "v"}))
+			rec, counts, log := applyAll(t, xattrs(file("f", ""), map[string]string{tt.name: "v"}))
 
 			// The attribute is written whatever its name: the blob says what the archive said.
 			require.Equal(t, []string{"file /f -rw-r--r-- 0:0 0", "setxattr /f " + tt.name + `="v"`}, rec.calls)
-			require.Equal(t, unpack.Counts{UnknownXattrPrefixes: tt.count}, counts)
+			require.Equal(t, layer.Counts{UnknownXattrPrefixes: tt.count}, counts)
 			if tt.count == 0 {
 				require.Empty(t, log)
 				return
 			}
-			require.Equal(t, "layer "+layer+`: entry "f": attribute `+fmt.Sprintf("%q", tt.name)+
+			require.Equal(t, "layer "+id+`: entry "f": attribute `+fmt.Sprintf("%q", tt.name)+
 				" is written but will not be readable in the guest: EROFS reads user., trusted., security. and the "+
 				"two POSIX ACL attributes only\n", log)
 		})

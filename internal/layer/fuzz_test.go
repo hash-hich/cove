@@ -1,4 +1,4 @@
-package unpack_test
+package layer_test
 
 import (
 	"archive/tar"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"gitlab.com/hich-hich/cove/internal/unpack"
+	"gitlab.com/hich-hich/cove/internal/layer"
 )
 
 // sink is the Writer of the fuzzing: it keeps nothing, drains each content, and checks on every
@@ -26,14 +26,14 @@ func (s *sink) check(p string) error {
 	return nil
 }
 
-func (s *sink) Mkdir(p string, _ unpack.Attr) error             { return s.check(p) }
-func (s *sink) Setattr(p string, _ unpack.Attr) error           { return s.check(p) }
-func (s *sink) Symlink(p string, _ unpack.Attr, _ string) error { return s.check(p) }
-func (s *sink) Link(p, target string) error                     { return s.check(p + target) }
-func (s *sink) Mknod(p string, _ unpack.Attr, _, _ int64) error { return s.check(p) }
-func (s *sink) Setxattr(p, _, _ string) error                   { return s.check(p) }
+func (s *sink) Mkdir(p string, _ layer.Attr) error             { return s.check(p) }
+func (s *sink) Setattr(p string, _ layer.Attr) error           { return s.check(p) }
+func (s *sink) Symlink(p string, _ layer.Attr, _ string) error { return s.check(p) }
+func (s *sink) Link(p, target string) error                    { return s.check(p + target) }
+func (s *sink) Mknod(p string, _ layer.Attr, _, _ int64) error { return s.check(p) }
+func (s *sink) Setxattr(p, _, _ string) error                  { return s.check(p) }
 
-func (s *sink) WriteFile(p string, _ unpack.Attr, _ int64, content io.Reader) error {
+func (s *sink) WriteFile(p string, _ layer.Attr, _ int64, content io.Reader) error {
 	if _, err := io.Copy(io.Discard, content); err != nil {
 		return fmt.Errorf("drain the content: %w", err)
 	}
@@ -107,7 +107,7 @@ func read(f *testing.F, r io.Reader) []byte {
 	return data
 }
 
-func FuzzLayer(f *testing.F) {
+func FuzzApply(f *testing.F) {
 	for _, seed := range hostile(f) {
 		f.Add(seed)
 	}
@@ -115,6 +115,6 @@ func FuzzLayer(f *testing.F) {
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		// A refusal is an outcome; the only failure is a panic, or a path the loop did not
 		// promise.
-		_, _ = unpack.Layer("fuzz", bytes.NewReader(data), &sink{f: f}, io.Discard)
+		_, _ = layer.Apply("fuzz", bytes.NewReader(data), &sink{f: f}, io.Discard)
 	})
 }

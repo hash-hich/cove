@@ -1,5 +1,5 @@
 //go:debug tarinsecurepath=0
-package unpack_test
+package layer_test
 
 import (
 	"archive/tar"
@@ -13,12 +13,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/hich-hich/cove/internal/unpack"
+	"gitlab.com/hich-hich/cove/internal/layer"
 )
 
 const (
-	// layer is the name the tests give the layer they unpack: what the messages must carry.
-	layer = "sha256:0123"
+	// id is the name the tests give the layer they apply: what the messages must carry.
+	id = "sha256:0123"
 	// rootRefused is the cause given when an entry would make the root something else than a directory.
 	rootRefused = "the root of the layer must be a directory"
 	// aSymlink and aFile are how the messages describe the type of an entry in the way.
@@ -57,16 +57,16 @@ func TestBoundsANameThatClimbsAboveTheRoot(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			rec, counts, log := unpackAll(t, file(tt.name, ""))
+			rec, counts, log := applyAll(t, file(tt.name, ""))
 
 			require.Equal(t, []string{"file " + tt.want + " -rw-r--r-- 0:0 0"}, rec.calls)
 			if !tt.bounded {
-				require.Equal(t, unpack.Counts{}, counts)
+				require.Equal(t, layer.Counts{}, counts)
 				require.Empty(t, log)
 				return
 			}
-			require.Equal(t, unpack.Counts{NormalizedEntries: 1}, counts)
-			require.Equal(t, "layer "+layer+": entry "+fmt.Sprintf("%q", tt.name)+": name "+
+			require.Equal(t, layer.Counts{NormalizedEntries: 1}, counts)
+			require.Equal(t, "layer "+id+": entry "+fmt.Sprintf("%q", tt.name)+": name "+
 				fmt.Sprintf("%q", tt.name)+" climbs above the root, bounded to "+tt.want+"\n", log)
 		})
 	}
@@ -88,10 +88,10 @@ func TestWritesASymbolicLinkAsIs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			rec, counts, log := unpackAll(t, symlink("l", tt.target))
+			rec, counts, log := applyAll(t, symlink("l", tt.target))
 
 			require.Equal(t, []string{"symlink /l Lrwxrwxrwx 0:0 " + tt.target}, rec.calls)
-			require.Equal(t, unpack.Counts{}, counts)
+			require.Equal(t, layer.Counts{}, counts)
 			require.Empty(t, log)
 		})
 	}
@@ -100,10 +100,10 @@ func TestWritesASymbolicLinkAsIs(t *testing.T) {
 func TestWritesAHardLinkToWhatWasWrittenEarlier(t *testing.T) {
 	t.Parallel()
 
-	rec, counts, log := unpackAll(t, file("a", "x"), link("b", "./a"), link("c", "/a"), link("d", "../a"))
+	rec, counts, log := applyAll(t, file("a", "x"), link("b", "./a"), link("c", "/a"), link("d", "../a"))
 
 	require.Equal(t, []string{"file /a -rw-r--r-- 0:0 1", "link /b /a", "link /c /a", "link /d /a"}, rec.calls)
-	require.Equal(t, unpack.Counts{NormalizedEntries: 1}, counts)
+	require.Equal(t, layer.Counts{NormalizedEntries: 1}, counts)
 	require.Contains(t, log, `entry "d": hard link target "../a" climbs above the root, bounded to /a`)
 }
 
@@ -168,7 +168,7 @@ func TestRefusesAnEntryUnderWhatIsNotADirectory(t *testing.T) {
 func TestTheLastEntryOfANameWins(t *testing.T) {
 	t.Parallel()
 
-	rec, _, _ := unpackAll(t,
+	rec, _, _ := applyAll(t,
 		file("a", "one"), file("a", "two"),
 		file("b", ""), dir("b"), file("b/x", ""),
 		symlink("c", "/x"), whiteout(".wh.c"),
@@ -196,7 +196,7 @@ func TestTheIndexKeepsTheTypeOfTheLastEntry(t *testing.T) {
 func TestADirectoryDeclaredAgainKeepsWhatItHolds(t *testing.T) {
 	t.Parallel()
 
-	rec, _, _ := unpackAll(t, dir("a"), file("a/x", ""), dir("a"), file("b/y", ""), dir("b"), dir("./"), link("z", "a/x"))
+	rec, _, _ := applyAll(t, dir("a"), file("a/x", ""), dir("a"), file("b/y", ""), dir("b"), dir("./"), link("z", "a/x"))
 
 	require.Equal(t, []string{
 		"mkdir /a drwxr-xr-x 0:0", "file /a/x -rw-r--r-- 0:0 0", "setattr /a drwxr-xr-x 0:0",
@@ -223,7 +223,7 @@ func TestPassesTheAttributesAsDeclared(t *testing.T) {
 	sticky := dir("tmp")
 	sticky.hdr.Mode = 0o1777
 
-	rec, _, _ := unpackAll(t, setuid, typed, char, block, fifo, sticky)
+	rec, _, _ := applyAll(t, setuid, typed, char, block, fifo, sticky)
 
 	require.Equal(t, []string{
 		"file /bin/su urwxr-xr-x 1000:2000 3",
@@ -236,7 +236,7 @@ func TestPassesTheAttributesAsDeclared(t *testing.T) {
 	got := rec.attrs["/bin/su"]
 	require.True(t, when.Equal(got.ModTime), "%s", got.ModTime)
 	got.ModTime = when
-	require.Equal(t, unpack.Attr{Mode: 0o755 | fs.ModeSetuid, UID: 1000, GID: 2000, ModTime: when}, got)
+	require.Equal(t, layer.Attr{Mode: 0o755 | fs.ModeSetuid, UID: 1000, GID: 2000, ModTime: when}, got)
 	require.Equal(t, "elf", rec.content["/bin/su"])
 }
 
@@ -272,9 +272,9 @@ func TestRefusesWhatCannotBeWrittenAsDeclared(t *testing.T) {
 func TestRefusesAnArchiveItCannotRead(t *testing.T) {
 	t.Parallel()
 
-	_, err := unpack.Layer(layer, bytes.NewReader(bytes.Repeat([]byte("x"), 512)), &recorder{}, io.Discard)
+	_, err := layer.Apply(id, bytes.NewReader(bytes.Repeat([]byte("x"), 512)), &recorder{}, io.Discard)
 
-	require.EqualError(t, err, "layer "+layer+": read the archive: archive/tar: invalid tar header")
+	require.EqualError(t, err, "layer "+id+": read the archive: archive/tar: invalid tar header")
 	require.ErrorIs(t, err, tar.ErrHeader)
 }
 
@@ -282,18 +282,18 @@ func TestNamesTheEntryAWriterRefuses(t *testing.T) {
 	t.Parallel()
 
 	rec := &recorder{refuse: "/b"}
-	_, err := unpack.Layer(layer, archive(t, file("a", ""), file("b", "")), rec, io.Discard)
+	_, err := layer.Apply(id, archive(t, file("a", ""), file("b", "")), rec, io.Discard)
 
-	require.EqualError(t, err, "layer "+layer+`: entry "b": the writer refuses it`)
+	require.EqualError(t, err, "layer "+id+`: entry "b": the writer refuses it`)
 	require.Equal(t, []string{"file /a -rw-r--r-- 0:0 0"}, rec.calls)
 }
 
 func TestRefusesAWriterThatLeavesContentUnread(t *testing.T) {
 	t.Parallel()
 
-	_, err := unpack.Layer(layer, archive(t, file("f", "hello")), &partial{}, io.Discard)
+	_, err := layer.Apply(id, archive(t, file("f", "hello")), &partial{}, io.Discard)
 
-	require.EqualError(t, err, "layer "+layer+`: entry "f": the writer took 1 of the 5 bytes of the content`)
+	require.EqualError(t, err, "layer "+id+`: entry "f": the writer took 1 of the 5 bytes of the content`)
 }
 
 func TestSkipsTheGlobalHeaderOfAPaxArchive(t *testing.T) {
@@ -303,28 +303,28 @@ func TestSkipsTheGlobalHeaderOfAPaxArchive(t *testing.T) {
 		Typeflag: tar.TypeXGlobalHeader, Name: "pax_global_header",
 		PAXRecords: map[string]string{"comment": "built by a forge", "SCHILY.xattr.user.x": "y"},
 	}}
-	rec, counts, log := unpackAll(t, global, file("a", ""))
+	rec, counts, log := applyAll(t, global, file("a", ""))
 
 	require.Equal(t, []string{"file /a -rw-r--r-- 0:0 0"}, rec.calls)
-	require.Equal(t, unpack.Counts{}, counts)
+	require.Equal(t, layer.Counts{}, counts)
 	require.Empty(t, log)
 }
 
 func TestUnpacksAnEmptyLayer(t *testing.T) {
 	t.Parallel()
 
-	rec, counts, log := unpackAll(t)
+	rec, counts, log := applyAll(t)
 
 	require.Empty(t, rec.calls)
-	require.Equal(t, unpack.Counts{}, counts)
+	require.Equal(t, layer.Counts{}, counts)
 	require.Empty(t, log)
 }
 
 func TestKeepsQuietWithoutALog(t *testing.T) {
 	t.Parallel()
 
-	counts, err := unpack.Layer(layer, archive(t, file("../escape", "")), &recorder{}, nil)
+	counts, err := layer.Apply(id, archive(t, file("../escape", "")), &recorder{}, nil)
 
 	require.NoError(t, err)
-	require.Equal(t, unpack.Counts{NormalizedEntries: 1}, counts)
+	require.Equal(t, layer.Counts{NormalizedEntries: 1}, counts)
 }

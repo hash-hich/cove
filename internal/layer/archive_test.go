@@ -1,4 +1,4 @@
-package unpack_test
+package layer_test
 
 import (
 	"archive/tar"

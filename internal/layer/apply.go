@@ -1,7 +1,8 @@
-// Package unpack turns the archive of an OCI layer into the entries an EROFS writer writes.
+// Package layer applies the archive of an OCI layer to a writer, the operation the image
+// specification calls applying a changeset. It writes nothing itself.
 //
-// The loop reads a tar stream already decompressed and emits, entry by entry, what the blob of the
-// layer holds, to a Writer the EROFS writer implements. It is the one part of the image path that
+// The loop reads a tar stream already decompressed and emits, entry by entry, what the layer
+// holds, to a Writer the EROFS writer implements. It is the one part of the image path that
 // decides anything: which name is bounded, which entry is impossible, what a whiteout becomes,
 // what an extended attribute is worth. Nothing downstream corrects it, and its faults are silent:
 // a blob that lost an opaque directory mounts and serves files that should have vanished. Each
@@ -14,7 +15,7 @@
 // //go:debug tarinsecurepath=0 of the main package makes archive/tar flag a name that is absolute
 // or climbs above the root; the loop takes the header anyway, since its normalization is what
 // decides, and the flag is a belt over it.
-package unpack
+package layer
 
 import (
 	"archive/tar"
@@ -75,7 +76,7 @@ type Attr struct {
 	ModTime time.Time
 }
 
-// Counts is what the unpacking of a layer counted: what meta.json and the report carry.
+// Counts is what the applying of a layer counted: what meta.json and the report carry.
 type Counts struct {
 	// NormalizedEntries counts the names bounded to the root, each said on the log. It is what
 	// meta.json carries as normalized_entries.
@@ -101,7 +102,7 @@ func (e *EntryError) Unwrap() error {
 	return e.Err
 }
 
-// Layer reads archive, the tar stream of the layer named layer already decompressed, and writes
+// Apply reads archive, the tar stream of the layer named layer already decompressed, and writes
 // its entries to w in the order of the archive: each name normalized, each whiteout turned into
 // what overlayfs reads, each extended attribute passed as the archive holds it. Every name bounded
 // to the root and every extended attribute EROFS will not read is said on log, one line each, and
@@ -109,8 +110,8 @@ func (e *EntryError) Unwrap() error {
 // entry and the cause, when an entry cannot be written as declared: a parent that is not a
 // directory, a hard link to what was not written earlier, a type no layer holds, an archive that
 // cannot be read, or a writer that fails.
-func Layer(layer string, archive io.Reader, w Writer, log io.Writer) (Counts, error) {
-	c := &unpacking{layer: layer, w: w, log: log, index: newIndex()}
+func Apply(layer string, archive io.Reader, w Writer, log io.Writer) (Counts, error) {
+	c := &applying{layer: layer, w: w, log: log, index: newIndex()}
 	tr := tar.NewReader(archive)
 	for {
 		hdr, err := tr.Next()
@@ -128,8 +129,8 @@ func Layer(layer string, archive io.Reader, w Writer, log io.Writer) (Counts, er
 	}
 }
 
-// unpacking is the state of one layer being unpacked.
-type unpacking struct {
+// applying is the state of one layer being applied.
+type applying struct {
 	layer  string
 	w      Writer
 	log    io.Writer
@@ -139,7 +140,7 @@ type unpacking struct {
 
 // entry writes the entry of hdr, whose body body serves, or skips what is nothing to write: the
 // global header of a PAX archive and the reserved whiteouts.
-func (c *unpacking) entry(hdr *tar.Header, body io.Reader) error {
+func (c *applying) entry(hdr *tar.Header, body io.Reader) error {
 	if hdr.Typeflag == tar.TypeXGlobalHeader {
 		return nil
 	}
@@ -157,7 +158,7 @@ func (c *unpacking) entry(hdr *tar.Header, body io.Reader) error {
 }
 
 // write writes the entry of hdr at p as the type the archive declares.
-func (c *unpacking) write(hdr *tar.Header, p string, body io.Reader) error {
+func (c *applying) write(hdr *tar.Header, p string, body io.Reader) error {
 	switch hdr.Typeflag {
 	case tar.TypeDir:
 		return c.dir(hdr, p)
@@ -179,12 +180,12 @@ func (c *unpacking) write(hdr *tar.Header, p string, body io.Reader) error {
 }
 
 // refuse returns the error that names the layer, the entry of hdr and err, the cause.
-func (c *unpacking) refuse(hdr *tar.Header, err error) error {
+func (c *applying) refuse(hdr *tar.Header, err error) error {
 	return &EntryError{Layer: c.layer, Entry: hdr.Name, Err: err}
 }
 
 // logf writes one line about the layer to the log.
-func (c *unpacking) logf(format string, args ...any) {
+func (c *applying) logf(format string, args ...any) {
 	if c.log != nil {
 		_, _ = fmt.Fprintf(c.log, "layer %s: %s\n", c.layer, fmt.Sprintf(format, args...))
 	}

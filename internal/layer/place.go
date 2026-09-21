@@ -1,4 +1,4 @@
-package unpack
+package layer
 
 import (
 	"archive/tar"
@@ -10,7 +10,7 @@ import (
 
 // dir writes the directory of hdr at p. A directory declared again keeps what it holds and takes
 // the new attributes; the root, which always exists, is such a directory.
-func (c *unpacking) dir(hdr *tar.Header, p string) error {
+func (c *applying) dir(hdr *tar.Header, p string) error {
 	if n := c.index.lookup(p); n != nil && n.mode.IsDir() {
 		if err := c.w.Setattr(p, attrOf(hdr, fs.ModeDir)); err != nil {
 			return c.refuse(hdr, err)
@@ -23,7 +23,7 @@ func (c *unpacking) dir(hdr *tar.Header, p string) error {
 // file writes the regular file of hdr at p with the body the archive serves for it. A writer
 // that leaves part of the body unread would produce a blob that mounts with a truncated file, so
 // the loop checks that the body was taken whole.
-func (c *unpacking) file(hdr *tar.Header, p string, body io.Reader) error {
+func (c *applying) file(hdr *tar.Header, p string, body io.Reader) error {
 	content := &io.LimitedReader{R: body, N: hdr.Size}
 	if err := c.place(hdr, p, 0, func(a Attr) error { return c.w.WriteFile(p, a, hdr.Size, content) }); err != nil {
 		return err
@@ -35,7 +35,7 @@ func (c *unpacking) file(hdr *tar.Header, p string, body io.Reader) error {
 }
 
 // device writes the device node of hdr at p, typ saying character or block.
-func (c *unpacking) device(hdr *tar.Header, p string, typ fs.FileMode) error {
+func (c *applying) device(hdr *tar.Header, p string, typ fs.FileMode) error {
 	return c.place(hdr, p, typ, func(a Attr) error { return c.w.Mknod(p, a, hdr.Devmajor, hdr.Devminor) })
 }
 
@@ -43,7 +43,7 @@ func (c *unpacking) device(hdr *tar.Header, p string, typ fs.FileMode) error {
 // archive and must have been written earlier in the layer, the layer being refused otherwise.
 // The new name takes the type of
 // its target in the index, since both are one inode.
-func (c *unpacking) link(hdr *tar.Header, p string) error {
+func (c *applying) link(hdr *tar.Header, p string) error {
 	target := c.normalize(hdr, "hard link target", hdr.Linkname)
 	n := c.index.lookup(target)
 	switch {
@@ -61,7 +61,7 @@ func (c *unpacking) link(hdr *tar.Header, p string) error {
 // the checks every entry passes: the root stays a directory, the parents are directories or
 // nothing, and what stood at p is removed first, the last of two entries of one name winning.
 // The entry is then recorded and given its extended attributes.
-func (c *unpacking) place(hdr *tar.Header, p string, typ fs.FileMode, emit func(Attr) error) error {
+func (c *applying) place(hdr *tar.Header, p string, typ fs.FileMode, emit func(Attr) error) error {
 	if p == "/" && !typ.IsDir() {
 		return c.refuse(hdr, errors.New("the root of the layer must be a directory"))
 	}
@@ -83,7 +83,7 @@ func (c *unpacking) place(hdr *tar.Header, p string, typ fs.FileMode, emit func(
 // parents refuses the entry of hdr when an ancestor of p was written as something other than a
 // directory: a symbolic link there would make the entry land wherever the link points. The
 // message names the layer, the entry and the parent in the way.
-func (c *unpacking) parents(hdr *tar.Header, p string) error {
+func (c *applying) parents(hdr *tar.Header, p string) error {
 	if parent, n := c.index.obstacle(p); n != nil {
 		return c.refuse(hdr, fmt.Errorf("parent %s is %s, not a directory", parent, describe(n.mode)))
 	}

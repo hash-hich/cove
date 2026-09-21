@@ -1,4 +1,4 @@
-package unpack_test
+package layer_test
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/hich-hich/cove/internal/unpack"
+	"gitlab.com/hich-hich/cove/internal/layer"
 )
 
 // recorder is the Writer of the tests: each call becomes one line, what a writer would have been
@@ -17,20 +17,20 @@ import (
 // refuse names the path whose write fails.
 type recorder struct {
 	calls   []string
-	attrs   map[string]unpack.Attr
+	attrs   map[string]layer.Attr
 	content map[string]string
 	refuse  string
 }
 
 // record keeps the line of one call, with attr under p when the call carries attributes.
-func (r *recorder) record(p string, attr *unpack.Attr, format string, args ...any) error {
+func (r *recorder) record(p string, attr *layer.Attr, format string, args ...any) error {
 	if p == r.refuse {
 		return errors.New("the writer refuses it")
 	}
 	r.calls = append(r.calls, fmt.Sprintf(format, args...))
 	if attr != nil {
 		if r.attrs == nil {
-			r.attrs = map[string]unpack.Attr{}
+			r.attrs = map[string]layer.Attr{}
 		}
 		r.attrs[p] = *attr
 	}
@@ -38,19 +38,19 @@ func (r *recorder) record(p string, attr *unpack.Attr, format string, args ...an
 }
 
 // owner writes the mode and the owner of attr as the lines of the recorder carry them.
-func owner(attr unpack.Attr) string {
+func owner(attr layer.Attr) string {
 	return fmt.Sprintf("%s %d:%d", attr.Mode, attr.UID, attr.GID)
 }
 
-func (r *recorder) Mkdir(p string, attr unpack.Attr) error {
+func (r *recorder) Mkdir(p string, attr layer.Attr) error {
 	return r.record(p, &attr, "mkdir %s %s", p, owner(attr))
 }
 
-func (r *recorder) Setattr(p string, attr unpack.Attr) error {
+func (r *recorder) Setattr(p string, attr layer.Attr) error {
 	return r.record(p, &attr, "setattr %s %s", p, owner(attr))
 }
 
-func (r *recorder) WriteFile(p string, attr unpack.Attr, size int64, content io.Reader) error {
+func (r *recorder) WriteFile(p string, attr layer.Attr, size int64, content io.Reader) error {
 	data, err := io.ReadAll(content)
 	if err != nil {
 		return fmt.Errorf("read the content: %w", err)
@@ -62,7 +62,7 @@ func (r *recorder) WriteFile(p string, attr unpack.Attr, size int64, content io.
 	return r.record(p, &attr, "file %s %s %d", p, owner(attr), size)
 }
 
-func (r *recorder) Symlink(p string, attr unpack.Attr, target string) error {
+func (r *recorder) Symlink(p string, attr layer.Attr, target string) error {
 	return r.record(p, &attr, "symlink %s %s %s", p, owner(attr), target)
 }
 
@@ -70,7 +70,7 @@ func (r *recorder) Link(p, target string) error {
 	return r.record(p, nil, "link %s %s", p, target)
 }
 
-func (r *recorder) Mknod(p string, attr unpack.Attr, major, minor int64) error {
+func (r *recorder) Mknod(p string, attr layer.Attr, major, minor int64) error {
 	return r.record(p, &attr, "mknod %s %s %d,%d", p, owner(attr), major, minor)
 }
 
@@ -82,27 +82,27 @@ func (r *recorder) RemoveAll(p string) error {
 	return r.record(p, nil, "removeall %s", p)
 }
 
-// unpackAll unpacks the archive of entries and returns what the writer was told, what was
+// applyAll unpacks the archive of entries and returns what the writer was told, what was
 // counted and what was said.
-func unpackAll(t *testing.T, entries ...entry) (*recorder, unpack.Counts, string) {
+func applyAll(t *testing.T, entries ...entry) (*recorder, layer.Counts, string) {
 	t.Helper()
 	rec := &recorder{}
 	var log bytes.Buffer
-	counts, err := unpack.Layer(layer, archive(t, entries...), rec, &log)
+	counts, err := layer.Apply(id, archive(t, entries...), rec, &log)
 	require.NoError(t, err)
 	return rec, counts, log.String()
 }
 
 // refused unpacks the archive of entries and returns the error that refused it, which must name
 // the layer and the entry.
-func refused(t *testing.T, entry string, entries ...entry) *unpack.EntryError {
+func refused(t *testing.T, entry string, entries ...entry) *layer.EntryError {
 	t.Helper()
-	_, err := unpack.Layer(layer, archive(t, entries...), &recorder{}, io.Discard)
-	entryErr, ok := errors.AsType[*unpack.EntryError](err)
+	_, err := layer.Apply(id, archive(t, entries...), &recorder{}, io.Discard)
+	entryErr, ok := errors.AsType[*layer.EntryError](err)
 	require.True(t, ok, "%v", err)
-	require.Equal(t, layer, entryErr.Layer)
+	require.Equal(t, id, entryErr.Layer)
 	require.Equal(t, entry, entryErr.Entry)
-	require.Contains(t, err.Error(), "layer "+layer+": entry "+fmt.Sprintf("%q", entry)+": ")
+	require.Contains(t, err.Error(), "layer "+id+": entry "+fmt.Sprintf("%q", entry)+": ")
 	return entryErr
 }
 
@@ -111,7 +111,7 @@ type partial struct {
 	recorder
 }
 
-func (*partial) WriteFile(_ string, _ unpack.Attr, _ int64, content io.Reader) error {
+func (*partial) WriteFile(_ string, _ layer.Attr, _ int64, content io.Reader) error {
 	if _, err := content.Read(make([]byte, 1)); err != nil {
 		return fmt.Errorf("read one byte: %w", err)
 	}

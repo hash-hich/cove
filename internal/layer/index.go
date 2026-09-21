@@ -1,4 +1,4 @@
-package unpack
+package layer
 
 import (
 	"io/fs"

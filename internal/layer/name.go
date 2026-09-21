@@ -1,4 +1,4 @@
-package unpack
+package layer
 
 import (
 	"archive/tar"
@@ -11,7 +11,7 @@ import (
 // bounding off: an entry that climbs is written, said and counted, never refused. subject says
 // what raw is
 // to the entry of hdr: its name, its hard link target, or the target of its whiteout.
-func (c *unpacking) normalize(hdr *tar.Header, subject, raw string) string {
+func (c *applying) normalize(hdr *tar.Header, subject, raw string) string {
 	p, bounded := normalize(raw)
 	if bounded {
 		c.counts.NormalizedEntries++

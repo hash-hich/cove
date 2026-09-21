@@ -52,14 +52,14 @@ linters:
   settings:
     depguard:
       rules:
-        # Unpacking a layer handles the names of an archive, never those of the host:
+        # Applying a layer handles the names of an archive, never those of the host:
         # path/filepath would bring the rules of the host, Windows included, into what a layer means.
-        unpack:
+        layer:
           files:
-            - "**/internal/unpack/**"
+            - "**/internal/layer/**"
           deny:
             - pkg: path/filepath
-              desc: the unpacking loop works on path and strings, the rules of the host stay out of a layer
+              desc: the loop works on path and strings, the rules of the host stay out of a layer
     dupl:
       # Lower values flag table-driven tests.
       threshold: 100

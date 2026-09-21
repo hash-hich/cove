@@ -1,4 +1,4 @@
-package unpack
+package layer
 
 import (
 	"archive/tar"
@@ -16,7 +16,7 @@ const xattrRecord = "SCHILY.xattr."
 // does not depend on the order
 // of a map. An attribute under a name EROFS does not read is written all the same, counted and
 // said.
-func (c *unpacking) xattrs(hdr *tar.Header, p string) error {
+func (c *applying) xattrs(hdr *tar.Header, p string) error {
 	for _, key := range slices.Sorted(maps.Keys(hdr.PAXRecords)) {
 		name, ok := strings.CutPrefix(key, xattrRecord)
 		if !ok {
