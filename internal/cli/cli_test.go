@@ -186,6 +186,38 @@ func TestRunHelp(t *testing.T) {
 	}
 }
 
+// TestNoOptionTouchesTheBoundingOfPaths holds C12 of the rootfs spec. A layer whose entry
+// climbs above the root of the image is bounded to it, never refused and never followed, and
+// that is not a policy a user picks: no help offers a way to turn it off, on pull, which
+// converts what it downloads, nor on the verbs that meet an image the store lacks.
+func TestNoOptionTouchesTheBoundingOfPaths(t *testing.T) {
+	t.Parallel()
+
+	// The words an option that touched the bounding would be written with.
+	knobs := []string{"bound", "normali", "sanitiz", "insecure", "unsafe", "traversal"}
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "cove itself", args: []string{"-h"}},
+		{name: "the pull verb", args: pullArgs("-h")},
+		{name: "the run verb", args: runArgs("-h")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout, stderr bytes.Buffer
+			app := &cli.App{Stdout: &stdout, Stderr: &stderr}
+			require.Equal(t, 0, app.Run(tt.args))
+			for _, knob := range knobs {
+				require.NotContains(t, strings.ToLower(stdout.String()), knob)
+			}
+		})
+	}
+}
+
 func TestParseRun(t *testing.T) {
 	t.Parallel()
 
