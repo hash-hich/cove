@@ -96,6 +96,17 @@ func (s *Store) Has(h v1.Hash) (bool, error) {
 	return true, nil
 }
 
+// Blob opens the blob named h, which the caller closes. What the store holds was verified against
+// its digest on the way in and a blob is never written again, so what comes out is what its name
+// says.
+func (s *Store) Blob(h v1.Hash) (io.ReadCloser, error) {
+	f, err := os.Open(s.blobPath(h))
+	if err != nil {
+		return nil, fmt.Errorf("open the blob %s: %w", h, err)
+	}
+	return f, nil
+}
+
 // Progress is what Put says on the way. OnWait is called once when another pull holds the blob,
 // OnRead for each chunk received. Either may be nil.
 type Progress struct {

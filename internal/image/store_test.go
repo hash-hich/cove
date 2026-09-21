@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -154,6 +155,36 @@ func TestPutFilesAVerifiedBlob(t *testing.T) {
 
 	require.NoError(t, err)
 	require.False(t, fetched)
+}
+
+func TestBlobServesWhatWasFiled(t *testing.T) {
+	t.Parallel()
+
+	store, err := image.Open(t.TempDir())
+	require.NoError(t, err)
+	h := digestOf(content)
+	_, err = store.Put(t.Context(), h, bytesOf(content), image.Progress{})
+	require.NoError(t, err)
+
+	rc, err := store.Blob(h)
+
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, rc.Close()) })
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Equal(t, content, got)
+}
+
+func TestBlobTheStoreDoesNotHold(t *testing.T) {
+	t.Parallel()
+
+	store, err := image.Open(t.TempDir())
+	require.NoError(t, err)
+
+	_, err = store.Blob(digestOf(content))
+
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	require.ErrorContains(t, err, digestOf(content).String())
 }
 
 func TestPutRefusesAnAlgorithmOtherThanSha256(t *testing.T) {
