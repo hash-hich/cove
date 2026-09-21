@@ -110,6 +110,7 @@ func (r Result) Pinned() string {
 // what the store lacks is downloaded, each blob verified against the digest that names it, and the
 // image is recorded in the index once every blob is in.
 func (p *Puller) Pull(ctx context.Context, ref name.Reference) (Result, error) {
+	start := time.Now()
 	platform := HostPlatform()
 	p.logf("pulling %s for %s", ref.Name(), platform)
 	img, digest, err := p.resolve(ctx, ref, platform)
@@ -120,7 +121,23 @@ func (p *Puller) Pull(ctx context.Context, ref name.Reference) (Result, error) {
 	if err := p.fetch(ctx, ref, img, &res); err != nil {
 		return Result{}, err
 	}
+	p.summarize(res, time.Since(start))
 	return res, nil
+}
+
+// summarize ends a pull the way docker ends one, a label to a line: what was pulled, then what
+// became of it, or that the image was there already, since a pull that downloads nothing would
+// otherwise end on the line that said nothing was missing and look like one that gave up. The
+// digest is said again although the line of the manifest carried it: it belongs next to the
+// outcome, where the eye lands, and stdout keeps the reference by digest to itself.
+func (p *Puller) summarize(res Result, took time.Duration) {
+	p.logf("Digest: %s", res.Digest)
+	if res.Cached {
+		p.logf("Status: up to date, nothing downloaded")
+		return
+	}
+	p.logf("Status: downloaded %d of %d layers, %s in %s", res.LayersFetched, res.LayersTotal,
+		formatSize(res.Bytes), took.Round(10*time.Millisecond))
 }
 
 // resolve asks the registry what ref designates and returns the image of platform with the
