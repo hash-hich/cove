@@ -434,26 +434,20 @@ func TestPullFailsWhenTheRegistryCannotBeReached(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	const unreachable = "127.0.0.1:1/org/repo:tag"
 
-	tests := []struct {
-		args []string
-		// wantLines counts the lines of stderr: the facts and the reason, or the reason alone.
-		wantLines int
-	}{
-		{args: pullArgs(unreachable), wantLines: 2},
-		{args: pullArgs("--json", unreachable), wantLines: 1},
-		{args: pullArgs("-q", unreachable), wantLines: 1},
-	}
-
-	for _, tt := range tests {
+	// A pull that never reached the registry says the reason and nothing else: the line that
+	// opens a pull waits for the manifest, which never came.
+	for _, args := range [][]string{
+		pullArgs(unreachable), pullArgs("--json", unreachable), pullArgs("-q", unreachable),
+	} {
 		var stdout, stderr bytes.Buffer
 		app := &cli.App{Stdout: &stdout, Stderr: &stderr}
 
-		code := app.Run(tt.args)
+		code := app.Run(args)
 
-		require.Equal(t, 1, code, tt.args)
+		require.Equal(t, 1, code, args)
 		require.Empty(t, stdout.String())
 		lines := strings.Split(strings.TrimSuffix(stderr.String(), "\n"), "\n")
-		require.Len(t, lines, tt.wantLines, stderr.String())
-		require.Contains(t, lines[len(lines)-1], "cove pull: 127.0.0.1:1: ")
+		require.Len(t, lines, 1, stderr.String())
+		require.Contains(t, lines[0], "cove pull: 127.0.0.1:1: ")
 	}
 }

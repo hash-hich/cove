@@ -112,7 +112,6 @@ func (r Result) Pinned() string {
 func (p *Puller) Pull(ctx context.Context, ref name.Reference) (Result, error) {
 	start := time.Now()
 	platform := HostPlatform()
-	p.logf("pulling %s for %s", ref.Name(), platform)
 	img, digest, err := p.resolve(ctx, ref, platform)
 	if err != nil {
 		return Result{}, err
@@ -284,7 +283,11 @@ func (p *Puller) fetchLayers(ctx context.Context, ref name.Reference, img v1.Ima
 	if err != nil {
 		return err
 	}
-	p.logf("manifest %s: %d layers, %d missing (%s)", res.Digest, res.LayersTotal, len(missing), formatSize(size))
+	// The line that opens a pull waits for the manifest: what is being pulled and what it costs
+	// belong together, and only the registry can tell the second. The digest of the manifest is
+	// not in it, since the pull ends on it.
+	p.logf("pulling %s for %s: %d layers, %d missing (%s)", ref.Name(), res.Platform, res.LayersTotal,
+		len(missing), formatSize(size))
 	if len(missing) == 0 {
 		return nil
 	}

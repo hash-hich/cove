@@ -253,8 +253,9 @@ func TestPullPicksThePlatformOfTheHost(t *testing.T) {
 	require.Equal(t, 2, res.LayersFetched)
 	require.Positive(t, res.Bytes)
 	require.False(t, res.Cached)
-	require.True(t, strings.HasPrefix(facts, "pulling "+ref.Name()+" for "+image.HostPlatform().String()+"\n"), facts)
-	require.Contains(t, facts, "2 layers, 2 missing")
+	// What is being pulled and what it costs open the pull on one line.
+	require.True(t, strings.HasPrefix(facts, "pulling "+ref.Name()+" for "+image.HostPlatform().String()+
+		": 2 layers, 2 missing ("), facts)
 	// The pull ends on what it brought, a label to a line, not on the last layer.
 	require.Regexp(t, "Digest: "+want.String()+
 		`\nStatus: downloaded 2 of 2 layers, [0-9.]+ kB in [0-9a-z.]+\n\z`, facts)
