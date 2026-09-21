@@ -18,6 +18,8 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+
+	"gitlab.com/hich-hich/cove/internal/unpack"
 )
 
 // ErrPlatform reports an image that is not published for the platform of the host.
@@ -94,6 +96,13 @@ type Result struct {
 	Bytes int64
 	// Cached says that nothing was downloaded: the image was in the store already.
 	Cached bool
+	// Entries counts what the layers hold, every layer of the manifest read whether its blob
+	// came down or was in the store already.
+	Entries int
+	// Unpacked counts what reading those layers found and could not write as the archive
+	// declared it: the names bounded to the root, and the extended attributes EROFS will not
+	// read in the guest.
+	Unpacked unpack.Counts
 
 	// repository is what Ref names, without tag or digest.
 	repository name.Repository
@@ -128,15 +137,19 @@ func (p *Puller) Pull(ctx context.Context, ref name.Reference) (Result, error) {
 // became of it, or that the image was there already, since a pull that downloads nothing would
 // otherwise end on the line that said nothing was missing and look like one that gave up. The
 // digest is said again although the line of the manifest carried it: it belongs next to the
-// outcome, where the eye lands, and stdout keeps the reference by digest to itself.
+// outcome, where the eye lands, and stdout keeps the reference by digest to itself. What the
+// layers held comes last, and on a pull that downloaded nothing as well: every layer of the
+// manifest is read, whether its blob came down or was in the store already.
 func (p *Puller) summarize(res Result, took time.Duration) {
 	p.logf("Digest: %s", res.Digest)
 	if res.Cached {
 		p.logf("Status: up to date, nothing downloaded")
-		return
+	} else {
+		p.logf("Status: downloaded %d of %d layers, %s in %s", res.LayersFetched, res.LayersTotal,
+			formatSize(res.Bytes), took.Round(10*time.Millisecond))
 	}
-	p.logf("Status: downloaded %d of %d layers, %s in %s", res.LayersFetched, res.LayersTotal,
-		formatSize(res.Bytes), took.Round(10*time.Millisecond))
+	p.logf("Unpacked: %d layers, %d entries, %d names bounded, %d attributes EROFS will not read",
+		res.LayersTotal, res.Entries, res.Unpacked.NormalizedEntries, res.Unpacked.UnknownXattrPrefixes)
 }
 
 // resolve asks the registry what ref designates and returns the image of platform with the
@@ -272,10 +285,9 @@ func (p *Puller) fetch(ctx context.Context, ref name.Reference, img v1.Image, re
 // measurement may move it later.
 const downloadsAtOnce = 3
 
-// fetchLayers brings the layers of descs the store lacks, no more than downloadsAtOnce of them at
-// a time, and logs how many there are to bring and their size before the first. Nothing waits for
-// the layer under it: each layer is a blob of its own, and the order they arrive in does not
-// matter to what is written.
+// fetchLayers brings the layers of descs the store lacks and reads all of them, and logs how many
+// there are to bring and their size before the first. Nothing waits for the layer under it: each
+// layer is a blob of its own, and the order they arrive in does not matter to what is written.
 func (p *Puller) fetchLayers(ctx context.Context, ref name.Reference, img v1.Image, descs []v1.Descriptor,
 	res *Result,
 ) error {
@@ -295,33 +307,44 @@ func (p *Puller) fetchLayers(ctx context.Context, ref name.Reference, img v1.Ima
 }
 
 // layer is one blob of the manifest and what the pull does with it: bring it down when the store
-// lacks it.
+// lacks it, then read every entry it holds.
 type layer struct {
 	desc v1.Descriptor
+	// diffID names the layer wherever it is spoken of: it is what the rootfs the layer unpacks
+	// to is keyed by, where its digest only names the bytes on the wire.
+	diffID v1.Hash
 	// open serves the bytes of the registry, nil when the store holds the blob already.
 	open func() (io.ReadCloser, error)
+	// stored is closed once the blob is in the store: what the reading of the layer waits for.
+	stored chan struct{}
 }
 
 // plan returns one entry per blob the layers of descs name, in the order of the manifest, how
 // many of them the store lacks and their size added up. A manifest may list the same layer twice,
-// which is legal and happens: the store holds one blob for it, so bringing it twice would be the
-// same bytes twice.
+// which is legal and happens: the store holds one blob for it and it unpacks to the same rootfs,
+// so it is brought down once and read once.
 func (p *Puller) plan(ref name.Reference, img v1.Image, descs []v1.Descriptor) ([]layer, int, int64, error) {
+	ids, err := diffIDs(ref, img, descs)
+	if err != nil {
+		return nil, 0, 0, err
+	}
 	layers := make([]layer, 0, len(descs))
 	var missing int
 	var size int64
 	seen := make(map[v1.Hash]bool, len(descs))
-	for _, desc := range descs {
+	for i, desc := range descs {
 		if seen[desc.Digest] {
 			continue
 		}
 		seen[desc.Digest] = true
-		l := layer{desc: desc}
+		l := layer{desc: desc, diffID: ids[i], stored: make(chan struct{})}
 		has, err := p.Store.Has(desc.Digest)
 		if err != nil {
 			return nil, 0, 0, err
 		}
-		if !has {
+		if has {
+			close(l.stored)
+		} else {
 			// The layers are taken from the manifest before the first download starts, so that a
 			// goroutine has nothing left to read of img.
 			blob, err := img.LayerByDigest(desc.Digest)
@@ -337,38 +360,69 @@ func (p *Puller) plan(ref name.Reference, img v1.Image, descs []v1.Descriptor) (
 	return layers, missing, size, nil
 }
 
+// diffIDs returns the diff id of each layer of descs, in the order of the manifest: the digest of
+// the layer once decompressed, which the config of the image lists. An image whose config does
+// not name one per layer is refused, since a layer would then be spoken of under the name of
+// another.
+func diffIDs(ref name.Reference, img v1.Image, descs []v1.Descriptor) ([]v1.Hash, error) {
+	config, err := img.ConfigFile()
+	if err != nil {
+		return nil, registryError(ref, err)
+	}
+	if len(config.RootFS.DiffIDs) != len(descs) {
+		return nil, fmt.Errorf("%s: the config names %d diff ids for %d layers", ref.Name(),
+			len(config.RootFS.DiffIDs), len(descs))
+	}
+	return config.RootFS.DiffIDs, nil
+}
+
 // errOtherLayer ends the downloads still to come once one layer has failed. The failure itself is
 // not used as the cause: a layer stopped by it reports what ended its wait, and the cause of a
 // blob that is fine must not be the corruption of another one.
 var errOtherLayer = errors.New("another layer failed")
 
-// run brings down the layers the store lacks. The first failure ends the downloads still to come,
-// and the error given back is the one of the layer that comes first in the manifest, not the one
-// that arrived first: two pulls of the same broken image say the same thing.
+// run brings down the layers the store lacks and reads every layer of the manifest, the two
+// stages going at once: a layer is read as soon as its blob is in, while the others are still
+// coming down. The first failure of either stage ends what has not run yet, and the error given
+// back is the one of the layer that comes first in the manifest, not the one that failed first:
+// two pulls of the same broken image say the same thing.
 func (r *report) run(ctx context.Context, layers []layer) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	errs := make([]error, len(layers))
-	r.download(ctx, cancel, layers, errs)
+	downloads, unpacks := make([]error, len(layers)), make([]error, len(layers))
+	tokens := make(chan struct{}, unpacksAtOnce)
+	var wg sync.WaitGroup
+	wg.Go(func() { r.download(ctx, cancel, layers, downloads) })
+	for i, l := range layers {
+		wg.Go(func() {
+			if err := r.unpack(ctx, l, tokens); err != nil {
+				unpacks[i] = err
+				cancel(errOtherLayer)
+			}
+		})
+	}
+	wg.Wait()
 	r.done()
-	for _, err := range errs {
+	for i := range layers {
 		// A layer that only stopped because another one failed is not that failure: the layer that
-		// failed has its own entry, and its blob is the one to name.
-		if err != nil && !errors.Is(err, errOtherLayer) {
-			return err
+		// failed has its own entry, and it is the one to name.
+		for _, err := range []error{downloads[i], unpacks[i]} {
+			if err != nil && !errors.Is(err, errOtherLayer) {
+				return err
+			}
 		}
 	}
-	// Nothing failed and the downloads are over: only the caller can have ended the context, and
-	// a layer that never started must not pass for a layer that came down.
+	// Nothing failed and both stages are over: only the caller can have ended the context, and a
+	// layer that never started must not pass for a layer that was brought in.
 	if ctx.Err() != nil {
-		return fmt.Errorf("download the layers: %w", context.Cause(ctx))
+		return fmt.Errorf("pull the layers: %w", context.Cause(ctx))
 	}
 	return nil
 }
 
-// download brings the layers of layers the store lacks, no more than downloadsAtOnce at a time.
-// The first failure ends the downloads still to come and is left in errs, at the place of its
-// layer.
+// download brings the layers of layers the store lacks, no more than downloadsAtOnce at a time,
+// and tells each of them that its blob is in. The first failure ends the downloads still to come
+// and is left in errs, at the place of its layer.
 func (r *report) download(ctx context.Context, cancel context.CancelCauseFunc, layers []layer, errs []error) {
 	tokens := make(chan struct{}, downloadsAtOnce)
 	var wg sync.WaitGroup
@@ -388,7 +442,9 @@ func (r *report) download(ctx context.Context, cancel context.CancelCauseFunc, l
 			if err := r.fetchLayer(ctx, l.desc, l.open); err != nil {
 				errs[i] = err
 				cancel(errOtherLayer)
+				return
 			}
+			close(l.stored)
 		})
 	}
 	wg.Wait()

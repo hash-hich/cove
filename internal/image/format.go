@@ -21,6 +21,9 @@ func WriteJSON(w io.Writer, r Result) {
 		LayersFetched: r.LayersFetched,
 		Bytes:         r.Bytes,
 		Cached:        r.Cached,
+		Entries:       r.Entries,
+		Normalized:    r.Unpacked.NormalizedEntries,
+		UnknownXattrs: r.Unpacked.UnknownXattrPrefixes,
 	})
 }
 
@@ -36,4 +39,7 @@ type resultJSON struct {
 	LayersFetched int    `json:"layers_fetched"`
 	Bytes         int64  `json:"bytes"`
 	Cached        bool   `json:"cached"`
+	Entries       int    `json:"entries"`
+	Normalized    int    `json:"normalized_entries"`
+	UnknownXattrs int    `json:"unknown_xattr_prefixes"`
 }

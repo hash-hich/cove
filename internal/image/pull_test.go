@@ -256,9 +256,11 @@ func TestPullPicksThePlatformOfTheHost(t *testing.T) {
 	// What is being pulled and what it costs open the pull on one line.
 	require.True(t, strings.HasPrefix(facts, "pulling "+ref.Name()+" for "+image.HostPlatform().String()+
 		": 2 layers, 2 missing ("), facts)
-	// The pull ends on what it brought, a label to a line, not on the last layer.
+	// The pull ends on what it brought and what the layers held, a label to a line, not on the
+	// last layer.
 	require.Regexp(t, "Digest: "+want.String()+
-		`\nStatus: downloaded 2 of 2 layers, [0-9.]+ kB in [0-9a-z.]+\n\z`, facts)
+		`\nStatus: downloaded 2 of 2 layers, [0-9.]+ kB in [0-9a-z.]+`+
+		`\nUnpacked: 2 layers, 2 entries, 0 names bounded, 0 attributes EROFS will not read\n\z`, facts)
 	requireComplete(t, root, host)
 	require.Len(t, blobs(t, root), 4)
 	idx, err := layout.ImageIndexFromPath(filepath.Join(root, "images"))
