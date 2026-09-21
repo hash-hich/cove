@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/logs"
 	"github.com/google/go-containerregistry/pkg/name"
 
+	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/image"
 )
 
@@ -66,9 +67,9 @@ func pullCommand(a *App, args []string) int {
 	return 0
 }
 
-// pull opens the store and pulls the image of opts into it, the facts on stderr unless the output
-// is meant for a script. It returns what was pulled, or the exit code of the failure it reported
-// on stderr.
+// pull opens the store and the cache of the rootfs, then pulls the image of opts into them, the
+// facts on stderr unless the output is meant for a script. It returns what was pulled, or the
+// exit code of the failure it reported on stderr.
 func pull(ctx context.Context, a *App, opts PullOptions) (image.Result, int) {
 	root, err := image.DefaultRoot()
 	if err != nil {
@@ -78,11 +79,15 @@ func pull(ctx context.Context, a *App, opts PullOptions) (image.Result, int) {
 	if err != nil {
 		return image.Result{}, failed(ctx, a, err)
 	}
+	rootfs, err := erofs.Open(root)
+	if err != nil {
+		return image.Result{}, failed(ctx, a, err)
+	}
 	facts := a.Stderr
 	if opts.Quiet || opts.JSON {
 		facts = io.Discard
 	}
-	puller := &image.Puller{Store: store, Log: facts, Terminal: terminal(a.Stderr)}
+	puller := &image.Puller{Store: store, Rootfs: rootfs, Log: facts, Terminal: terminal(a.Stderr)}
 	// The library retries a request three times on its own, a second then three of wait, and
 	// says nothing by default: a command that takes ten seconds more would look stuck. Its
 	// warnings go through the puller, which owns that stream while layers come down.
@@ -193,13 +198,21 @@ linux/<architecture of the host>, and an image without one is refused. The
 registry is asked what the reference designates on every call, as docker pull
 does; only the layers absent from the store are downloaded, each verified
 against the digest that names it. The credentials are those docker login or
-podman login configured, nothing is asked. Prints the reference by digest of
-the manifest pulled, never of an index: what to give run.
+podman login configured, nothing is asked.
+
+Each layer is turned into the read only disk a sandbox mounts as its blob
+lands, and filed under its diff id in ~/.cache/cove/rootfs, where every image
+built on that layer finds it. A layer whose decompressed bytes do not match
+the diff id the image names fails the pull, and nothing of it is filed. Prints
+the reference by digest of the manifest pulled, never of an index: what to
+give run.
 
 Options:
   -q, --quiet   Print only the reference by digest, nothing on stderr
       --json    Print one JSON object instead, {ref, digest, platform,
-                layers_total, layers_fetched, bytes, cached}, nothing on stderr
+                layers_total, layers_fetched, bytes, cached, blobs_converted,
+                entries, normalized_entries, unknown_xattr_prefixes}, nothing
+                on stderr
 
 Exit codes: 0; 1 when the pull failed, the reason on stderr; 2 on a usage
 error, a reference without registry or malformed included; 130 on SIGINT and

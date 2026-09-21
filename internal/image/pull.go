@@ -19,7 +19,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 
-	"gitlab.com/hich-hich/cove/internal/layer"
+	"gitlab.com/hich-hich/cove/internal/erofs"
 )
 
 // ErrPlatform reports an image that is not published for the platform of the host.
@@ -38,6 +38,8 @@ func HostPlatform() v1.Platform {
 // Puller brings images into a store and says what it does on Log.
 type Puller struct {
 	Store *Store
+	// Rootfs is where the layers are converted into the disks a VM mounts, as their blobs land.
+	Rootfs *erofs.Cache
 	// Log receives the facts of the pull, one line each; nil keeps quiet.
 	Log io.Writer
 	// Terminal says that Log is a terminal, where the progress of a download is redrawn in place
@@ -96,13 +98,21 @@ type Result struct {
 	Bytes int64
 	// Cached says that nothing was downloaded: the image was in the store already.
 	Cached bool
-	// Entries counts what the layers hold, every layer of the manifest read whether its blob
-	// came down or was in the store already.
+	// BlobsConverted counts the layers this pull converted into a disk; the others were in the
+	// cache of the rootfs already, converted by an earlier pull or by another image.
+	BlobsConverted int
+	// Entries counts what the layers hold, every layer of the manifest counted whether it was
+	// converted here or read again from the cache.
 	Entries int
-	// Unpacked counts what reading those layers found and could not write as the archive
-	// declared it: the names bounded to the root, and the extended attributes EROFS will not
-	// read in the guest.
-	Unpacked layer.Counts
+	// NormalizedEntries counts the names those layers had bounded to the root, and
+	// UnknownXattrPrefixes the extended attributes EROFS will not read in the guest.
+	NormalizedEntries    int
+	UnknownXattrPrefixes int
+	// Downloaded and Converted are how long each of the two stages took. They overlap: a layer
+	// is converted while the others are still coming down, so the two do not add up to the
+	// total.
+	Downloaded time.Duration
+	Converted  time.Duration
 
 	// repository is what Ref names, without tag or digest.
 	repository name.Repository
@@ -137,17 +147,22 @@ func (p *Puller) Pull(ctx context.Context, ref name.Reference) (Result, error) {
 // became of it, or that the image was there already, since a pull that downloads nothing would
 // otherwise end on the line that said nothing was missing and look like one that gave up. The
 // digest is said again although the line of the manifest carried it: it belongs next to the
-// outcome, where the eye lands, and stdout keeps the reference by digest to itself. What reading
-// the layers counted stays out of it: it belongs to the rootfs each layer unpacks to, where the
-// cache will hold it, and it says nothing to whoever is watching an image come down.
+// outcome, where the eye lands, and stdout keeps the reference by digest to itself.
+//
+// The two stages are said apart and each with its own duration, the total last: they overlap, so
+// one figure covering both would say nothing of where the time went. What the layers hold and
+// what could not be written as declared stay out of it: they belong to the disk each layer was
+// converted into, and say nothing to whoever is watching an image come down.
 func (p *Puller) summarize(res Result, took time.Duration) {
 	p.logf("Digest: %s", res.Digest)
 	if res.Cached {
 		p.logf("Status: up to date, nothing downloaded")
-		return
+	} else {
+		p.logf("Status: downloaded %d of %d layers, %s in %s", res.LayersFetched, res.LayersTotal,
+			formatSize(res.Bytes), res.Downloaded.Round(10*time.Millisecond))
 	}
-	p.logf("Status: downloaded %d of %d layers, %s in %s", res.LayersFetched, res.LayersTotal,
-		formatSize(res.Bytes), took.Round(10*time.Millisecond))
+	p.logf("Rootfs: converted %d of %d layers in %s, %s in all", res.BlobsConverted, res.LayersTotal,
+		res.Converted.Round(10*time.Millisecond), took.Round(10*time.Millisecond))
 }
 
 // resolve asks the registry what ref designates and returns the image of platform with the
@@ -379,22 +394,22 @@ func diffIDs(ref name.Reference, img v1.Image, descs []v1.Descriptor) ([]v1.Hash
 // blob that is fine must not be the corruption of another one.
 var errOtherLayer = errors.New("another layer failed")
 
-// run brings down the layers the store lacks and reads every layer of the manifest, the two
-// stages going at once: a layer is read as soon as its blob is in, while the others are still
-// coming down. The first failure of either stage ends what has not run yet, and the error given
-// back is the one of the layer that comes first in the manifest, not the one that failed first:
-// two pulls of the same broken image say the same thing.
+// run brings down the layers the store lacks and converts every layer of the manifest, the two
+// stages going at once: a layer is converted as soon as its blob is in, while the others are
+// still coming down. The first failure of either stage ends what has not run yet, and the error
+// given back is the one of the layer that comes first in the manifest, not the one that failed
+// first: two pulls of the same broken image say the same thing.
 func (r *report) run(ctx context.Context, blobs []blob) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	downloads, unpacks := make([]error, len(blobs)), make([]error, len(blobs))
-	tokens := make(chan struct{}, unpacksAtOnce)
+	downloads, conversions := make([]error, len(blobs)), make([]error, len(blobs))
+	tokens := make(chan struct{}, convertsAtOnce)
 	var wg sync.WaitGroup
 	wg.Go(func() { r.download(ctx, cancel, blobs, downloads) })
 	for i, b := range blobs {
 		wg.Go(func() {
-			if err := r.unpack(ctx, b, tokens); err != nil {
-				unpacks[i] = err
+			if err := r.convert(ctx, b, tokens); err != nil {
+				conversions[i] = err
 				cancel(errOtherLayer)
 			}
 		})
@@ -404,7 +419,7 @@ func (r *report) run(ctx context.Context, blobs []blob) error {
 	for i := range blobs {
 		// A layer that only stopped because another one failed is not that failure: the layer that
 		// failed has its own entry, and it is the one to name.
-		for _, err := range []error{downloads[i], unpacks[i]} {
+		for _, err := range []error{downloads[i], conversions[i]} {
 			if err != nil && !errors.Is(err, errOtherLayer) {
 				return err
 			}
@@ -422,6 +437,7 @@ func (r *report) run(ctx context.Context, blobs []blob) error {
 // and tells each of them that its blob is in. The first failure ends the downloads still to come
 // and is left in errs, at the place of its layer.
 func (r *report) download(ctx context.Context, cancel context.CancelCauseFunc, blobs []blob, errs []error) {
+	start := time.Now()
 	tokens := make(chan struct{}, downloadsAtOnce)
 	var wg sync.WaitGroup
 	for i, b := range blobs {
@@ -446,6 +462,9 @@ func (r *report) download(ctx context.Context, cancel context.CancelCauseFunc, b
 		})
 	}
 	wg.Wait()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.res.Downloaded = time.Since(start)
 }
 
 // fetchDescription brings the config and the manifest of img, both already read from the
@@ -515,6 +534,9 @@ type report struct {
 	res   *Result
 	board *board
 	mu    sync.Mutex
+	// converting is when the first conversion started, what the span the conversions took is
+	// measured from.
+	converting time.Time
 }
 
 // report returns what a pull says on the way.
