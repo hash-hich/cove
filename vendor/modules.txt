@@ -9,6 +9,11 @@ github.com/docker/cli/cli/config/types
 ## explicit; go 1.21
 github.com/docker/docker-credential-helpers/client
 github.com/docker/docker-credential-helpers/credentials
+# github.com/erofs/go-erofs v0.3.2-0.20260901071538-03d68d88381c
+## explicit; go 1.23
+github.com/erofs/go-erofs
+github.com/erofs/go-erofs/internal/builder
+github.com/erofs/go-erofs/internal/disk
 # github.com/google/go-cmp v0.7.0
 ## explicit; go 1.21
 github.com/google/go-cmp/cmp
