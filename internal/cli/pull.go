@@ -82,12 +82,13 @@ func pull(ctx context.Context, a *App, opts PullOptions) (image.Result, int) {
 	if opts.Quiet || opts.JSON {
 		facts = io.Discard
 	}
+	puller := &image.Puller{Store: store, Log: facts, Terminal: terminal(a.Stderr)}
 	// The library retries a request three times on its own, a second then three of wait, and
-	// says nothing by default: a command that takes ten seconds more would look stuck.
-	logs.Warn.SetOutput(facts)
+	// says nothing by default: a command that takes ten seconds more would look stuck. Its
+	// warnings go through the puller, which owns that stream while layers come down.
+	logs.Warn.SetOutput(puller.Warnings())
 	logs.Warn.SetFlags(0)
 	logs.Warn.SetPrefix("cove pull: ")
-	puller := &image.Puller{Store: store, Log: facts, Terminal: terminal(a.Stderr)}
 	res, err := puller.Pull(ctx, opts.Ref)
 	if err != nil {
 		return image.Result{}, failed(ctx, a, err)

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -512,16 +513,25 @@ func TestPullInterrupted(t *testing.T) {
 	img := build(t, image.HostPlatform(), 2)
 	publish(t, ref, img)
 	first, second := layers(t, img)[0], layers(t, img)[1]
+	root := t.TempDir()
 	// The second layer comes half way, then the download hangs until the pull is interrupted.
+	// The interrupt waits for the other layer to be filed, so that every run keeps the same
+	// layer and drops the same one although the two come down together.
 	ctx, cancel := context.WithCancelCause(t.Context())
 	interrupted := errors.New("interrupt received")
 	reg.onBlob(second, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("half of the layer"))
 		_ = http.NewResponseController(w).Flush()
+		for !stored(root, first) {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(time.Millisecond):
+			}
+		}
 		cancel(interrupted)
 		<-r.Context().Done()
 	})
-	root := t.TempDir()
 
 	_, err := puller(t, root, io.Discard, nil).Pull(ctx, ref)
 
@@ -536,6 +546,102 @@ func TestPullInterrupted(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, res.LayersFetched)
 	requireComplete(t, root, img)
+}
+
+// stored reports whether the blob named h is filed in the store at root.
+func stored(root string, h v1.Hash) bool {
+	_, err := os.Stat(filepath.Join(root, "images", "blobs", "sha256", h.Hex))
+	return err == nil
+}
+
+// holdBlobs holds every download of a blob for d before the registry serves it, and returns the
+// highest number of them the registry had in flight at the same time.
+func (reg *testRegistry) holdBlobs(d time.Duration) func() int64 {
+	var live, peak atomic.Int64
+	hk := hook(func(_ http.ResponseWriter, r *http.Request) bool {
+		if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/blobs/sha256:") {
+			return false
+		}
+		n := live.Add(1)
+		for p := peak.Load(); n > p; p = peak.Load() {
+			if peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		time.Sleep(d)
+		live.Add(-1)
+		return false
+	})
+	reg.hook.Store(&hk)
+	return peak.Load
+}
+
+func TestPullDownloadsSeveralLayersAtOnceUnderABound(t *testing.T) {
+	t.Parallel()
+
+	reg := serve(t)
+	ref := reg.ref(t, "org/repo:tag")
+	img := build(t, image.HostPlatform(), 5)
+	publish(t, ref, img)
+	peak := reg.holdBlobs(50 * time.Millisecond)
+	var facts bytes.Buffer
+	p := puller(t, t.TempDir(), &facts, nil)
+	p.Terminal = true
+
+	res, err := p.Pull(t.Context(), ref)
+
+	require.NoError(t, err)
+	require.Equal(t, 5, res.LayersFetched)
+	// Three at a time: never a fourth, and three at least once.
+	require.Equal(t, int64(3), peak())
+	// A line of its own per layer, as docker draws them, and a line of facts once it is in.
+	for _, digest := range layers(t, img) {
+		require.Contains(t, facts.String(), digest.Hex[:12]+": 0 B / ", facts.String())
+		require.Regexp(t, digest.Hex[:12]+`: [0-9.]+ kB in `, facts.String())
+	}
+	require.NotContains(t, facts.String(), "sha256:"+layers(t, img)[0].Hex)
+}
+
+func TestPullReportsTheFirstFailureOfTheManifest(t *testing.T) {
+	t.Parallel()
+
+	reg := serve(t)
+	ref := reg.ref(t, "org/repo:tag")
+	img := build(t, image.HostPlatform(), 2)
+	publish(t, ref, img)
+	// The lower layer of the manifest fails first in time; the higher one fails after it.
+	higher, lower := layers(t, img)[0], layers(t, img)[1]
+	breakThem := func() {
+		failed := make(chan struct{})
+		hk := hook(func(w http.ResponseWriter, r *http.Request) bool {
+			switch {
+			case strings.HasSuffix(r.URL.Path, "/blobs/"+lower.String()):
+				_, _ = w.Write(bytes.Repeat([]byte("x"), 1024))
+				close(failed)
+			case strings.HasSuffix(r.URL.Path, "/blobs/"+higher.String()):
+				select {
+				case <-failed:
+				case <-r.Context().Done():
+				}
+				_, _ = w.Write(bytes.Repeat([]byte("y"), 1024))
+			default:
+				return false
+			}
+			return true
+		})
+		reg.hook.Store(&hk)
+	}
+
+	// Played twice: what a broken image says does not depend on which failure arrived first.
+	for range 2 {
+		breakThem()
+
+		_, _, err := pull(t, t.TempDir(), ref)
+
+		require.Error(t, err)
+		require.ErrorContains(t, err, higher.String())
+		require.NotContains(t, err.Error(), lower.String())
+	}
 }
 
 func TestPullDownloadsALayerListedTwiceOnce(t *testing.T) {
@@ -583,6 +689,35 @@ func downloaded(t *testing.T, img v1.Image, held int) int64 {
 		}
 	}
 	return size
+}
+
+func TestPullCountsWhatItBroughtDown(t *testing.T) {
+	t.Parallel()
+
+	reg := serve(t)
+	ref := reg.ref(t, "org/repo:tag")
+	base := build(t, image.HostPlatform(), 3)
+	publish(t, ref, base)
+	root := t.TempDir()
+	_, _, err := pull(t, root, ref)
+	require.NoError(t, err)
+	grown := base
+	for range 7 {
+		layer, err := random.Layer(1024, types.DockerLayer)
+		require.NoError(t, err)
+		grown, err = mutate.AppendLayers(grown, layer)
+		require.NoError(t, err)
+	}
+	publish(t, ref, grown)
+
+	res, _, err := pull(t, root, ref)
+
+	require.NoError(t, err)
+	require.Equal(t, 10, res.LayersTotal)
+	require.Equal(t, 7, res.LayersFetched)
+	require.Equal(t, downloaded(t, grown, 3), res.Bytes)
+	require.False(t, res.Cached)
+	requireComplete(t, root, grown)
 }
 
 func TestPullConcurrently(t *testing.T) {
@@ -633,7 +768,7 @@ func TestPullDrawsProgressOnATerminalOnly(t *testing.T) {
 
 	reg := serve(t)
 	ref := reg.ref(t, "org/repo:tag")
-	publish(t, ref, build(t, image.HostPlatform(), 1))
+	publish(t, ref, build(t, image.HostPlatform(), 3))
 
 	for _, terminal := range []bool{true, false} {
 		var facts bytes.Buffer
@@ -643,15 +778,23 @@ func TestPullDrawsProgressOnATerminalOnly(t *testing.T) {
 		_, err := p.Pull(t.Context(), ref)
 
 		require.NoError(t, err)
-		require.Equal(t, terminal, strings.Contains(facts.String(), "\r"), facts.String())
+		require.Equal(t, terminal, strings.Contains(facts.String(), "\x1b["), facts.String())
 		if terminal {
-			// The meter is erased before the line of facts of the layer takes its place.
-			require.Contains(t, facts.String(), "\r\x1b[Ksha256:")
+			// The block of the downloads is erased before the lines of facts take its place.
+			require.Contains(t, facts.String(), "\x1b[3A\r\x1b[J")
 		}
 		// Nothing of the progress is left behind: what the pull wrote ends in a complete line,
 		// and the reference stdout carries does not land at the end of a meter.
 		require.True(t, strings.HasSuffix(facts.String(), "\n"), "%q", facts.String())
 	}
+
+	// Quiet: a puller without a log writes nowhere, meter included.
+	quiet := puller(t, t.TempDir(), nil, nil)
+	quiet.Terminal = true
+
+	_, err := quiet.Pull(t.Context(), ref)
+
+	require.NoError(t, err)
 }
 
 // dockerConfig returns the JSON of a docker config that knows the registry at host, or no
