@@ -255,6 +255,9 @@ func TestPullPicksThePlatformOfTheHost(t *testing.T) {
 	require.False(t, res.Cached)
 	require.True(t, strings.HasPrefix(facts, "pulling "+ref.Name()+" for "+image.HostPlatform().String()+"\n"), facts)
 	require.Contains(t, facts, "2 layers, 2 missing")
+	// The pull ends on what it brought, a label to a line, not on the last layer.
+	require.Regexp(t, "Digest: "+want.String()+
+		`\nStatus: downloaded 2 of 2 layers, [0-9.]+ kB in [0-9a-z.]+\n\z`, facts)
 	requireComplete(t, root, host)
 	require.Len(t, blobs(t, root), 4)
 	idx, err := layout.ImageIndexFromPath(filepath.Join(root, "images"))
@@ -435,6 +438,7 @@ func TestPullDownloadsOnlyWhatTheStoreLacks(t *testing.T) {
 	require.Zero(t, again.LayersFetched)
 	require.Zero(t, again.Bytes)
 	require.Contains(t, facts, "2 layers, 0 missing")
+	require.Contains(t, facts, "Status: up to date, nothing downloaded")
 
 	// The tag moves to an image with one more layer: only that one comes down.
 	extra, err := random.Layer(1024, types.DockerLayer)
