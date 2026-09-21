@@ -9,6 +9,7 @@ linters:
     - bodyclose
     - copyloopvar
     - decorder
+    - depguard
     - dupl
     - errname
     - errorlint
@@ -49,6 +50,17 @@ linters:
     - usetesting
     - wrapcheck
   settings:
+    depguard:
+      rules:
+        # path/filepath answers what a path means on the machine running cove, Windows included.
+        # A layer is read the same way everywhere, so the loop that reads one works on path and
+        # strings alone. A rule held beats a sentence in a comment.
+        disk:
+          files:
+            - "**/internal/rootfs/disk/*.go"
+          deny:
+            - pkg: path/filepath
+              desc: a layer is not read with the rules of the host; use path and strings
     dupl:
       # Lower values flag table-driven tests.
       threshold: 100
