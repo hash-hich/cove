@@ -1,4 +1,4 @@
-package image_test
+package filelock_test
 
 import (
 	"bufio"
@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/hich-hich/cove/internal/image"
+	"gitlab.com/hich-hich/cove/internal/filelock"
 )
 
 // holderEnv names the lock the helper process takes, and holderReady is what it says once it
@@ -29,60 +29,60 @@ func TestTryLockExcludesTheSamePathOnly(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "blob.lock")
-	held, ok, err := image.TryLock(path)
+	held, ok, err := filelock.Try(path)
 	require.NoError(t, err)
 	require.True(t, ok)
 
 	// The same blob is refused, and an absence of error is how a caller tells it apart from a
 	// store it cannot write.
-	_, ok, err = image.TryLock(path)
+	_, ok, err = filelock.Try(path)
 	require.NoError(t, err)
 	require.False(t, ok)
 
 	// Another blob is free: two pulls wait on each other only for a layer both want.
-	other, ok, err := image.TryLock(filepath.Join(dir, "other.lock"))
+	other, ok, err := filelock.Try(filepath.Join(dir, "other.lock"))
 	require.NoError(t, err)
 	require.True(t, ok)
-	image.Unlock(other)
+	other.Release()
 
-	image.Unlock(held)
-	again, ok, err := image.TryLock(path)
+	held.Release()
+	again, ok, err := filelock.Try(path)
 	require.NoError(t, err)
 	require.True(t, ok)
-	image.Unlock(again)
+	again.Release()
 }
 
 func TestLockWaitsForTheHolderAndSaysSoOnce(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "blob.lock")
-	held, ok, err := image.TryLock(path)
+	held, ok, err := filelock.Try(path)
 	require.NoError(t, err)
 	require.True(t, ok)
 	var waits atomic.Int64
 	type taken struct {
-		lock *image.FileLock
+		lock *filelock.Lock
 		err  error
 	}
 	got := make(chan taken, 1)
 	go func() {
-		l, err := image.Lock(t.Context(), path, func() { waits.Add(1) })
+		l, err := filelock.Take(t.Context(), path, func() { waits.Add(1) })
 		got <- taken{lock: l, err: err}
 	}()
 
 	// Several rounds of the wait pass, announced once and only once, and nothing is taken while
 	// the lock is held.
-	time.Sleep(3 * image.LockPoll)
+	time.Sleep(3 * filelock.Poll)
 	require.Equal(t, int64(1), waits.Load())
 	require.Empty(t, got)
 
-	image.Unlock(held)
+	held.Release()
 
 	select {
 	case res := <-got:
 		require.NoError(t, res.err)
-		image.Unlock(res.lock)
-	case <-time.After(10 * image.LockPoll):
+		res.lock.Release()
+	case <-time.After(10 * filelock.Poll):
 		t.Fatal("the lock was not taken once its holder released it")
 	}
 	require.Equal(t, int64(1), waits.Load())
@@ -92,15 +92,15 @@ func TestLockStopsWhenTheContextIsCancelled(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "blob.lock")
-	held, ok, err := image.TryLock(path)
+	held, ok, err := filelock.Try(path)
 	require.NoError(t, err)
 	require.True(t, ok)
-	t.Cleanup(func() { image.Unlock(held) })
+	t.Cleanup(func() { held.Release() })
 	ctx, cancel := context.WithCancelCause(t.Context())
 	interrupted := errors.New("interrupt received")
 
 	// A signal reaches a pull that waits: the wait ends with the reason, and nothing else does.
-	_, err = image.Lock(ctx, path, func() { cancel(interrupted) })
+	_, err = filelock.Take(ctx, path, func() { cancel(interrupted) })
 
 	require.ErrorIs(t, err, interrupted)
 	require.ErrorContains(t, err, path)
@@ -111,12 +111,12 @@ func TestLockReportsAPathItCannotOpen(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "missing", "blob.lock")
 
-	_, ok, err := image.TryLock(path)
+	_, ok, err := filelock.Try(path)
 
 	require.ErrorContains(t, err, "open the lock")
 	require.False(t, ok)
 
-	_, err = image.Lock(t.Context(), path, nil)
+	_, err = filelock.Take(t.Context(), path, nil)
 
 	require.ErrorContains(t, err, "open the lock")
 }
@@ -139,17 +139,17 @@ func TestLockIsReleasedWhenItsHolderIsKilled(t *testing.T) {
 	line, err := bufio.NewReader(out).ReadString('\n')
 	require.NoError(t, err)
 	require.Equal(t, holderReady+"\n", line)
-	_, ok, err := image.TryLock(path)
+	_, ok, err := filelock.Try(path)
 	require.NoError(t, err)
 	require.False(t, ok, "the holder is running and holds the lock")
 
 	require.NoError(t, holder.Process.Kill())
 	_ = holder.Wait()
 
-	l, ok, err := image.TryLock(path)
+	l, ok, err := filelock.Try(path)
 	require.NoError(t, err)
 	require.True(t, ok, "a killed holder left its lock taken")
-	image.Unlock(l)
+	l.Release()
 }
 
 // TestHolderOfALockThatIsKilled is the process the test above starts and kills, not a test of its
@@ -162,7 +162,7 @@ func TestHolderOfALockThatIsKilled(t *testing.T) {
 	if path == "" {
 		t.Skip("this process was not started by TestLockIsReleasedWhenItsHolderIsKilled")
 	}
-	_, ok, err := image.TryLock(path)
+	_, ok, err := filelock.Try(path)
 	require.NoError(t, err)
 	require.True(t, ok)
 	_, _ = fmt.Println(holderReady)

@@ -17,6 +17,8 @@ import (
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+
+	"gitlab.com/hich-hich/cove/internal/filelock"
 )
 
 // ErrCorrupt reports a blob whose bytes do not hash to the digest that names it.
@@ -131,11 +133,11 @@ func (s *Store) Put(ctx context.Context, h v1.Hash, open func() (io.ReadCloser, 
 	if ok, err := s.Has(h); err != nil || ok {
 		return false, err
 	}
-	l, err := lock(ctx, s.lockPath(h.Hex), p.OnWait)
+	l, err := filelock.Take(ctx, s.lockPath(h.Hex), p.OnWait)
 	if err != nil {
 		return false, fmt.Errorf("blob %s: %w", h, err)
 	}
-	defer l.unlock()
+	defer l.Release()
 	// Whoever waited was waiting for a download of this very blob, which may be there now.
 	if ok, err := s.Has(h); err != nil || ok {
 		return false, err
@@ -200,11 +202,11 @@ func (s *Store) Record(ctx context.Context, desc v1.Descriptor) error {
 	if ref == "" {
 		return errors.New("record the image: the descriptor carries no reference")
 	}
-	l, err := lock(ctx, s.lockPath(indexFile), nil)
+	l, err := filelock.Take(ctx, s.lockPath(indexFile), nil)
 	if err != nil {
 		return fmt.Errorf("record the image: %w", err)
 	}
-	defer l.unlock()
+	defer l.Release()
 	index, err := s.readIndex()
 	if err != nil {
 		return fmt.Errorf("record the image: %w", err)
@@ -245,11 +247,11 @@ func (s *Store) readIndex() (*v1.IndexManifest, error) {
 // yet: oci-layout, and an index with no image. It takes the lock of the index so that a pull
 // recording an image does not race a store being opened.
 func (s *Store) initLayout() error {
-	l, err := lock(context.Background(), s.lockPath(indexFile), nil)
+	l, err := filelock.Take(context.Background(), s.lockPath(indexFile), nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("lock the index: %w", err)
 	}
-	defer l.unlock()
+	defer l.Release()
 	empty := v1.IndexManifest{SchemaVersion: 2, MediaType: types.OCIImageIndex, Manifests: []v1.Descriptor{}}
 	data, err := json.MarshalIndent(empty, "", "  ")
 	if err != nil {
@@ -298,9 +300,7 @@ func (s *Store) writeFile(name string, data []byte) error {
 // sweep removes from tmp/ the data files nobody holds: what a kill -9 or a power cut left behind,
 // which has no value since a download is never resumed. Whether a pull is on a file is told by
 // the lock of its blob, not by the pid in its name, which another program may have been given
-// since. Lock files are never removed: a lock removed between the look of a sweep and the flock
-// of a pull would let a third pull recreate the name and lock another inode, and the two would
-// download the same layer at once.
+// since. Lock files are never removed: see filelock.Lock.Release.
 func (s *Store) sweep() error {
 	entries, err := os.ReadDir(s.inTmp())
 	if err != nil {
@@ -312,15 +312,15 @@ func (s *Store) sweep() error {
 		if e.IsDir() || strings.HasSuffix(name, lockSuffix) || dot < 0 {
 			continue
 		}
-		l, ok, err := tryLock(s.lockPath(name[:dot]))
+		l, ok, err := filelock.Try(s.lockPath(name[:dot]))
 		if err != nil {
-			return err
+			return fmt.Errorf("look at a download: %w", err)
 		}
 		if !ok {
 			continue
 		}
 		err = os.Remove(s.inTmp(name))
-		l.unlock()
+		l.Release()
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("remove a stale download: %w", err)
 		}
