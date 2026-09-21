@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -43,6 +45,35 @@ type Puller struct {
 	// Keychain gives the credentials of the registry; nil is the default keychain of the library,
 	// what docker login and podman login configured.
 	Keychain authn.Keychain
+
+	// live is what the pull in flight says while its layers come down, nil at any other time: a
+	// warning of the library goes through it rather than straight to Log, which would leave the
+	// cursor off the board.
+	live atomic.Pointer[report]
+}
+
+// Warnings returns where the warnings of the registry library must be sent while p pulls: it
+// retries a request on its own and says so, on the same stream as the board of the downloads. A
+// line written straight to that stream, from the goroutine of any layer, would leave the cursor
+// inside the block, and the next redraw would then erase the wrong lines. Through this writer a
+// warning is one more line of facts above the block.
+func (p *Puller) Warnings() io.Writer { return warnings{p: p} }
+
+// warnings turns what the library logs into the lines of facts of a pull.
+type warnings struct {
+	p *Puller
+}
+
+// Write says each line of b, above the board when layers are coming down.
+func (w warnings) Write(b []byte) (int, error) {
+	for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		if live := w.p.live.Load(); live != nil {
+			live.say("%s", line)
+			continue
+		}
+		w.p.logf("%s", line)
+	}
+	return len(b), nil
 }
 
 // Result is what a pull found and did.
@@ -218,8 +249,17 @@ func (p *Puller) fetch(ctx context.Context, ref name.Reference, img v1.Image, re
 	return p.record(ctx, ref, img, res)
 }
 
-// fetchLayers brings the layers of descs the store lacks, one at a time, and logs how many there
-// are to bring and their size before the first.
+// downloadsAtOnce bounds how many layers come down at the same time. Three is the figure docker
+// and the CRI plugin of containerd both settled on: a registry limits the rate of one client, and
+// past a few connections the gain goes while the risk of being throttled stays. It is a constant
+// and not an option, since the setting docker exposes lives in its daemon and cove has none; a
+// measurement may move it later.
+const downloadsAtOnce = 3
+
+// fetchLayers brings the layers of descs the store lacks, no more than downloadsAtOnce of them at
+// a time, and logs how many there are to bring and their size before the first. Nothing waits for
+// the layer under it: each layer is a blob of its own, and the order they arrive in does not
+// matter to what is written.
 func (p *Puller) fetchLayers(ctx context.Context, ref name.Reference, img v1.Image, descs []v1.Descriptor,
 	res *Result,
 ) error {
@@ -228,14 +268,71 @@ func (p *Puller) fetchLayers(ctx context.Context, ref name.Reference, img v1.Ima
 		return err
 	}
 	p.logf("manifest %s: %d layers, %d missing (%s)", res.Digest, res.LayersTotal, len(missing), formatSize(size))
-	for _, desc := range missing {
+	if len(missing) == 0 {
+		return nil
+	}
+	// The layers are taken from the manifest before the first download starts, so that a
+	// goroutine has nothing left to read of img.
+	opens := make([]func() (io.ReadCloser, error), len(missing))
+	for i, desc := range missing {
 		layer, err := img.LayerByDigest(desc.Digest)
 		if err != nil {
 			return registryError(ref, err)
 		}
-		if err := p.fetchLayer(ctx, desc, layer.Compressed, res); err != nil {
+		opens[i] = layer.Compressed
+	}
+	rep := p.report(res)
+	p.live.Store(rep)
+	defer p.live.Store(nil)
+	return rep.download(ctx, missing, opens)
+}
+
+// errOtherLayer ends the downloads still to come once one layer has failed. The failure itself is
+// not used as the cause: a layer stopped by it reports what ended its wait, and the cause of a
+// blob that is fine must not be the corruption of another one.
+var errOtherLayer = errors.New("another layer failed")
+
+// download brings the layers of descs, opens[i] serving descs[i], no more than downloadsAtOnce at
+// a time. The first failure ends the downloads still to come, and the error given
+// back is the one of the layer that comes first in the manifest, not the one that arrived first:
+// two pulls of the same broken image say the same thing.
+func (r *report) download(ctx context.Context, descs []v1.Descriptor,
+	opens []func() (io.ReadCloser, error),
+) error {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	errs := make([]error, len(descs))
+	tokens := make(chan struct{}, downloadsAtOnce)
+	var wg sync.WaitGroup
+	for i, desc := range descs {
+		select {
+		case tokens <- struct{}{}:
+		case <-ctx.Done():
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Go(func() {
+			defer func() { <-tokens }()
+			if err := r.fetchLayer(ctx, desc, opens[i]); err != nil {
+				errs[i] = err
+				cancel(errOtherLayer)
+			}
+		})
+	}
+	wg.Wait()
+	r.done()
+	for _, err := range errs {
+		// A layer that only stopped because another one failed is not that failure: the layer that
+		// failed has its own entry, and its blob is the one to name.
+		if err != nil && !errors.Is(err, errOtherLayer) {
 			return err
 		}
+	}
+	// Nothing failed and the downloads are over: only the caller can have ended the context, and
+	// a layer that never started must not pass for a layer that came down.
+	if ctx.Err() != nil {
+		return fmt.Errorf("download the layers: %w", context.Cause(ctx))
 	}
 	return nil
 }
@@ -323,41 +420,77 @@ func (p *Puller) missing(descs []v1.Descriptor) ([]v1.Descriptor, int64, error) 
 	return missing, size, nil
 }
 
-// fetchLayer brings one layer into the store, its progress on Log, and logs the fact once done:
-// the digest, the size and the time it took.
-func (p *Puller) fetchLayer(ctx context.Context, desc v1.Descriptor, open func() (io.ReadCloser, error),
-	res *Result,
-) error {
+// report is what the layers coming down together say: the board that draws them, the lines of
+// facts and the counts of the result. One lock covers the three, so that a line never lands in
+// the middle of another, two layers never draw at once, and the counts hold.
+type report struct {
+	p     *Puller
+	res   *Result
+	board *board
+	mu    sync.Mutex
+}
+
+// report returns what a pull says on the way.
+func (p *Puller) report(res *Result) *report {
+	return &report{p: p, res: res, board: p.board()}
+}
+
+// fetchLayer brings one layer into the store, a line of the board following it down, and says
+// once it is in what it took: the layer, the size and the time.
+func (r *report) fetchLayer(ctx context.Context, desc v1.Descriptor, open func() (io.ReadCloser, error)) error {
 	start := time.Now()
-	progress, meter := p.progress(desc.Digest, desc.Size)
-	fetched, err := p.Store.Put(ctx, desc.Digest, open, progress)
-	meter.clear()
-	if err != nil {
+	g := r.start(desc)
+	fetched, err := r.p.Store.Put(ctx, desc.Digest, open, Progress{
+		OnWait: func() { r.say("%s: waiting for another pull that downloads it", short(desc.Digest)) },
+		OnRead: func(n int64) { r.advance(g, n) },
+	})
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	switch {
+	case err != nil:
+		r.board.drop(g)
 		return err
-	}
-	if !fetched {
-		p.logf("%s: found in the store while waiting", desc.Digest)
+	case !fetched:
+		r.board.finish(g, "%s: found in the store while waiting", short(desc.Digest))
 		return nil
 	}
-	res.LayersFetched++
-	res.Bytes += desc.Size
-	p.logf("%s: %s in %s", desc.Digest, formatSize(desc.Size), time.Since(start).Round(10*time.Millisecond))
+	r.res.LayersFetched++
+	r.res.Bytes += desc.Size
+	r.board.finish(g, "%s: %s in %s", short(desc.Digest), formatSize(desc.Size),
+		time.Since(start).Round(10*time.Millisecond))
 	return nil
 }
 
-// waiting returns what Put tells of a blob that is already in hand: the wait for another pull
-// that holds it, and no meter, since nothing of it comes down the network.
-func (p *Puller) waiting(digest v1.Hash) Progress {
-	return Progress{OnWait: func() { p.logf("%s: waiting for another pull that downloads it", digest) }}
+// start puts the line of the layer desc on the board.
+func (r *report) start(desc v1.Descriptor) *gauge {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.board.start(short(desc.Digest), desc.Size)
 }
 
-// progress returns what Put tells of a layer coming down, the wait and the bytes received on the
-// meter of the terminal, with that meter for the caller to erase once the layer is in or given up.
-func (p *Puller) progress(digest v1.Hash, size int64) (Progress, *meter) {
-	meter := p.meter(digest, size)
-	report := p.waiting(digest)
-	report.OnRead = meter.advance
-	return report, meter
+// advance counts n more bytes of the layer g follows.
+func (r *report) advance(g *gauge, n int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.board.advance(g, n)
+}
+
+// say writes one line of facts above the lines of what is coming down.
+func (r *report) say(format string, args ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.board.say(format, args...)
+}
+
+// done takes the board off the screen: the downloads are over, whether they all came in or not.
+func (r *report) done() {
+	r.board.clear()
+}
+
+// waiting returns what Put tells of a blob that is already in hand: the wait for another pull
+// that holds it, and no line on the board, since nothing of it comes down the network.
+func (p *Puller) waiting(digest v1.Hash) Progress {
+	return Progress{OnWait: func() { p.logf("%s: waiting for another pull that downloads it", short(digest)) }}
 }
 
 // bytesReader returns an open function serving raw.
