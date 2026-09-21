@@ -279,7 +279,7 @@ const downloadsAtOnce = 3
 func (p *Puller) fetchLayers(ctx context.Context, ref name.Reference, img v1.Image, descs []v1.Descriptor,
 	res *Result,
 ) error {
-	missing, size, err := p.missing(descs)
+	layers, missing, size, err := p.plan(ref, img, descs)
 	if err != nil {
 		return err
 	}
@@ -287,24 +287,54 @@ func (p *Puller) fetchLayers(ctx context.Context, ref name.Reference, img v1.Ima
 	// belong together, and only the registry can tell the second. The digest of the manifest is
 	// not in it, since the pull ends on it.
 	p.logf("pulling %s for %s: %d layers, %d missing (%s)", ref.Name(), res.Platform, res.LayersTotal,
-		len(missing), formatSize(size))
-	if len(missing) == 0 {
-		return nil
-	}
-	// The layers are taken from the manifest before the first download starts, so that a
-	// goroutine has nothing left to read of img.
-	opens := make([]func() (io.ReadCloser, error), len(missing))
-	for i, desc := range missing {
-		layer, err := img.LayerByDigest(desc.Digest)
-		if err != nil {
-			return registryError(ref, err)
-		}
-		opens[i] = layer.Compressed
-	}
+		missing, formatSize(size))
 	rep := p.report(res)
 	p.live.Store(rep)
 	defer p.live.Store(nil)
-	return rep.download(ctx, missing, opens)
+	return rep.run(ctx, layers)
+}
+
+// layer is one blob of the manifest and what the pull does with it: bring it down when the store
+// lacks it.
+type layer struct {
+	desc v1.Descriptor
+	// open serves the bytes of the registry, nil when the store holds the blob already.
+	open func() (io.ReadCloser, error)
+}
+
+// plan returns one entry per blob the layers of descs name, in the order of the manifest, how
+// many of them the store lacks and their size added up. A manifest may list the same layer twice,
+// which is legal and happens: the store holds one blob for it, so bringing it twice would be the
+// same bytes twice.
+func (p *Puller) plan(ref name.Reference, img v1.Image, descs []v1.Descriptor) ([]layer, int, int64, error) {
+	layers := make([]layer, 0, len(descs))
+	var missing int
+	var size int64
+	seen := make(map[v1.Hash]bool, len(descs))
+	for _, desc := range descs {
+		if seen[desc.Digest] {
+			continue
+		}
+		seen[desc.Digest] = true
+		l := layer{desc: desc}
+		has, err := p.Store.Has(desc.Digest)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		if !has {
+			// The layers are taken from the manifest before the first download starts, so that a
+			// goroutine has nothing left to read of img.
+			blob, err := img.LayerByDigest(desc.Digest)
+			if err != nil {
+				return nil, 0, 0, registryError(ref, err)
+			}
+			l.open = blob.Compressed
+			missing++
+			size += desc.Size
+		}
+		layers = append(layers, l)
+	}
+	return layers, missing, size, nil
 }
 
 // errOtherLayer ends the downloads still to come once one layer has failed. The failure itself is
@@ -312,35 +342,14 @@ func (p *Puller) fetchLayers(ctx context.Context, ref name.Reference, img v1.Ima
 // blob that is fine must not be the corruption of another one.
 var errOtherLayer = errors.New("another layer failed")
 
-// download brings the layers of descs, opens[i] serving descs[i], no more than downloadsAtOnce at
-// a time. The first failure ends the downloads still to come, and the error given
-// back is the one of the layer that comes first in the manifest, not the one that arrived first:
-// two pulls of the same broken image say the same thing.
-func (r *report) download(ctx context.Context, descs []v1.Descriptor,
-	opens []func() (io.ReadCloser, error),
-) error {
+// run brings down the layers the store lacks. The first failure ends the downloads still to come,
+// and the error given back is the one of the layer that comes first in the manifest, not the one
+// that arrived first: two pulls of the same broken image say the same thing.
+func (r *report) run(ctx context.Context, layers []layer) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	errs := make([]error, len(descs))
-	tokens := make(chan struct{}, downloadsAtOnce)
-	var wg sync.WaitGroup
-	for i, desc := range descs {
-		select {
-		case tokens <- struct{}{}:
-		case <-ctx.Done():
-		}
-		if ctx.Err() != nil {
-			break
-		}
-		wg.Go(func() {
-			defer func() { <-tokens }()
-			if err := r.fetchLayer(ctx, desc, opens[i]); err != nil {
-				errs[i] = err
-				cancel(errOtherLayer)
-			}
-		})
-	}
-	wg.Wait()
+	errs := make([]error, len(layers))
+	r.download(ctx, cancel, layers, errs)
 	r.done()
 	for _, err := range errs {
 		// A layer that only stopped because another one failed is not that failure: the layer that
@@ -355,6 +364,34 @@ func (r *report) download(ctx context.Context, descs []v1.Descriptor,
 		return fmt.Errorf("download the layers: %w", context.Cause(ctx))
 	}
 	return nil
+}
+
+// download brings the layers of layers the store lacks, no more than downloadsAtOnce at a time.
+// The first failure ends the downloads still to come and is left in errs, at the place of its
+// layer.
+func (r *report) download(ctx context.Context, cancel context.CancelCauseFunc, layers []layer, errs []error) {
+	tokens := make(chan struct{}, downloadsAtOnce)
+	var wg sync.WaitGroup
+	for i, l := range layers {
+		if l.open == nil {
+			continue
+		}
+		select {
+		case tokens <- struct{}{}:
+		case <-ctx.Done():
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Go(func() {
+			defer func() { <-tokens }()
+			if err := r.fetchLayer(ctx, l.desc, l.open); err != nil {
+				errs[i] = err
+				cancel(errOtherLayer)
+			}
+		})
+	}
+	wg.Wait()
 }
 
 // fetchDescription brings the config and the manifest of img, both already read from the
@@ -414,30 +451,6 @@ func distinct(descs []v1.Descriptor) int {
 		seen[desc.Digest] = true
 	}
 	return len(seen)
-}
-
-// missing returns the layers of descs the store lacks, each digest once, and their size added up.
-// A manifest may list the same layer twice, which is legal and happens: the store holds one blob
-// for it, so bringing it twice would be the same bytes twice.
-func (p *Puller) missing(descs []v1.Descriptor) ([]v1.Descriptor, int64, error) {
-	var missing []v1.Descriptor
-	var size int64
-	seen := make(map[v1.Hash]bool, len(descs))
-	for _, desc := range descs {
-		if seen[desc.Digest] {
-			continue
-		}
-		seen[desc.Digest] = true
-		has, err := p.Store.Has(desc.Digest)
-		if err != nil {
-			return nil, 0, err
-		}
-		if !has {
-			missing = append(missing, desc)
-			size += desc.Size
-		}
-	}
-	return missing, size, nil
 }
 
 // report is what the layers coming down together say: the board that draws them, the lines of
