@@ -167,18 +167,19 @@ func (reg *testRegistry) holdBlob(h v1.Hash, ready func() bool) func() bool {
 	return forced.Load
 }
 
-// saidOfLayer returns how many lines of facts the unpacking of the layer named id wrote.
+// saidOfLayer returns how many lines of facts the conversion of the layer named id wrote.
 func saidOfLayer(facts string, id v1.Hash) int {
 	return strings.Count(facts, "layer "+id.String()+": entry ")
 }
 
-func TestPullUnpacksEveryLayerOfTheManifest(t *testing.T) {
+func TestPullAccountsForEveryLayerOfTheManifest(t *testing.T) {
 	t.Parallel()
 
 	reg := serve(t)
 	root := t.TempDir()
-	// Two of the five layers are in the store before the image is pulled, and are read all the
-	// same: each layer holds one name that climbs above the root, so each says one line.
+	// Two of the five layers were converted by an earlier pull. They are not read again, so they
+	// say nothing this time, and what they hold is counted all the same, out of the cache: each
+	// layer holds one name that climbs above the root.
 	held := make([]v1.Layer, 0, 5)
 	held = append(held, gzipLayer(t, tarOf(t, climbing("a"))), gzipLayer(t, tarOf(t, climbing("b"))))
 	base := reg.ref(t, "org/base:tag")
@@ -195,15 +196,20 @@ func TestPullUnpacksEveryLayerOfTheManifest(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 5, res.LayersTotal)
 	require.Equal(t, 3, res.LayersFetched)
+	require.Equal(t, 3, res.BlobsConverted)
 	require.Equal(t, 5, res.Entries)
-	require.Equal(t, 5, res.Unpacked.NormalizedEntries)
-	for _, id := range diffIDs(t, img) {
+	require.Equal(t, 5, res.NormalizedEntries)
+	ids := diffIDs(t, img)
+	for _, id := range ids[:2] {
+		require.Equal(t, 0, saidOfLayer(facts, id), facts)
+	}
+	for _, id := range ids[2:] {
 		require.Equal(t, 1, saidOfLayer(facts, id), facts)
 	}
 	require.Empty(t, dataFiles(t, filepath.Join(root, "tmp")))
 }
 
-func TestPullUnpacksALayerWhileTheOthersComeDown(t *testing.T) {
+func TestPullConvertsALayerWhileTheOthersComeDown(t *testing.T) {
 	t.Parallel()
 
 	reg := serve(t)
@@ -240,8 +246,8 @@ func TestPullSaysWhatALayerHoldsAndEROFSWillNotKeep(t *testing.T) {
 	res, facts, err := pull(t, t.TempDir(), ref)
 
 	require.NoError(t, err)
-	require.Equal(t, 1, res.Unpacked.NormalizedEntries)
-	require.Equal(t, 1, res.Unpacked.UnknownXattrPrefixes)
+	require.Equal(t, 1, res.NormalizedEntries)
+	require.Equal(t, 1, res.UnknownXattrPrefixes)
 	// Each line names its layer by its diff id, the key of the rootfs it unpacks to.
 	require.Contains(t, facts, "layer "+ids[0].String()+": entry \"../escaped\": name \"../escaped\" "+
 		"climbs above the root, bounded to /escaped")
@@ -252,7 +258,7 @@ func TestPullSaysWhatALayerHoldsAndEROFSWillNotKeep(t *testing.T) {
 	require.NotContains(t, facts, "Unpacked:")
 }
 
-func TestPullReadsALayerWhateverItIsCompressedWith(t *testing.T) {
+func TestPullConvertsALayerWhateverItIsCompressedWith(t *testing.T) {
 	t.Parallel()
 
 	reg := serve(t)
@@ -266,7 +272,7 @@ func TestPullReadsALayerWhateverItIsCompressedWith(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 2, res.Entries)
-	require.Equal(t, 2, res.Unpacked.NormalizedEntries)
+	require.Equal(t, 2, res.NormalizedEntries)
 	for _, id := range ids {
 		require.Equal(t, 1, saidOfLayer(facts, id), facts)
 	}

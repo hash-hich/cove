@@ -31,6 +31,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/validate"
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/image"
 )
 
@@ -197,10 +198,12 @@ func layers(t *testing.T, img v1.Image) []v1.Hash {
 func puller(t *testing.T, root string, facts io.Writer, keychain authn.Keychain) *image.Puller {
 	store, err := image.Open(root)
 	require.NoError(t, err)
+	rootfs, err := erofs.Open(root)
+	require.NoError(t, err)
 	if keychain == nil {
 		keychain = authn.NewMultiKeychain()
 	}
-	return &image.Puller{Store: store, Log: facts, Keychain: keychain}
+	return &image.Puller{Store: store, Rootfs: rootfs, Log: facts, Keychain: keychain}
 }
 
 // pull pulls ref into a store at root and returns the result and the facts written.
@@ -258,7 +261,8 @@ func TestPullPicksThePlatformOfTheHost(t *testing.T) {
 		": 2 layers, 2 missing ("), facts)
 	// The pull ends on what it brought, a label to a line, not on the last layer.
 	require.Regexp(t, "Digest: "+want.String()+
-		`\nStatus: downloaded 2 of 2 layers, [0-9.]+ kB in [0-9a-z.]+\n\z`, facts)
+		`\nStatus: downloaded 2 of 2 layers, [0-9.]+ kB in [0-9a-z.]+\n`+
+		`Rootfs: converted 2 of 2 layers in [0-9a-z.]+, [0-9a-z.]+ in all\n\z`, facts)
 	requireComplete(t, root, host)
 	require.Len(t, blobs(t, root), 4)
 	idx, err := layout.ImageIndexFromPath(filepath.Join(root, "images"))
