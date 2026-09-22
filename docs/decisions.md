@@ -18,6 +18,29 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-22: a disk is keyed by the diff id of its layer
+
+**Decided.** A converted layer lives in one directory of the cache of the
+rootfs, named by the diff id of that layer, shared by every image that names
+it. A layer whose config carries no diff id falls back to the digest of the
+compressed blob. The writer that decides the bytes is a directory above,
+`rootfs/v1/`, and a `SOURCE_DATE_EPOCH` other than the default zero is a
+suffix on the key.
+
+**Why.** The diff id is the hash of the decompressed layer, so it names what
+goes into the disk and nothing else. It is known before a byte is read, which
+is what lets a pull skip a layer instead of reading it to find out. The same
+layer compressed twice over, or served by another registry, is one diff id and
+one disk. The stream is hashed on the way in and refused when it does not
+match, so a key is never taken on trust. Nothing in a key belongs to an image,
+so the cache is shared and never walked.
+
+**Rejected.** The digest of the compressed blob as the key: it names one
+compression of the layer, so the same content recompressed converts twice. The
+fingerprint of the disk as the key: it exists only once the disk is written,
+which is after the work the key is there to avoid. One directory per image:
+the same layer is converted once per image that holds it.
+
 ## 2026-09-21: the disk writer is go-erofs
 
 **Decided.** `github.com/erofs/go-erofs` writes the disks, rather than a
