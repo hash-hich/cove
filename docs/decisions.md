@@ -18,6 +18,21 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-21: the rootfs disk is EROFS
+
+**Decided.** EROFS for the read only disk a run mounts, over ext4.
+
+**Why.** The disk is read only by contract, since every write of a run lands
+in the overlay above it. ext4 is a read-write file system, so its journal,
+allocation bitmaps, htree and inode tables are capacity cove never uses and
+must write correctly anyway. EROFS is an image format: the tree is laid out
+once at the end, with no allocator, no hash seed and no UUID to fix. What it
+costs is four lines of the guest kernel configuration, `CONFIG_EROFS_FS`, in
+mainline since Linux 5.4, and `_XATTR`, `_POSIX_ACL` and `_SECURITY` to carry
+the extended attributes (where ext4 asks for nothing).
+
+**Rejected.** ext4: no writer cove can take.
+
 ## 2026-09-20: cove transforms the layers itself
 
 **Decided.** `internal/layer` turns the archive of one layer into instructions
