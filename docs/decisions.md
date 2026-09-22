@@ -18,6 +18,36 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-20: cove transforms the layers itself
+
+**Decided.** `internal/layer` turns the archive of one layer into instructions
+for a `Writer` interface. It sanitizes the paths, keeps every entry under the
+root, and applies the conventions of tar, OCI and overlayfs. No unpacker of
+the market is linked for that step, and `mutate.Extract` is not used either.
+
+**Why.** No file held in a layer is ever written to the file system of the
+host. The three reference unpackers all do just that: containerd
+`pkg/archive`, `umoci` `oci/layer` and `moby/go-archive` take a tar and
+produce a directory on the host, which is the intermediate form the target
+removed, and it costs the image twice its size on the way. Their shape leaves
+no seam either: a tar enters, a directory comes out, and there is nowhere to
+put a writer.
+
+The conventions cannot be inherited either, because the market does not agree
+on a single way to read them. Measured on one hostile tar: containerd and
+`umoci` bound a name that climbs, where `moby` refuses it; none of the three
+refuses a symbolic link whose target leaves the root; `tar2ext4` normalizes
+both without a word. Cove answers for what its images hold, so the rule is
+stated once, in a package that touches no file and can be fuzzed, rather than
+measured out of a dependency at every bump.
+
+**Rejected.** containerd `pkg/archive`, `umoci` `oci/layer` and
+`moby/go-archive`, above. `mutate.Extract`, which concatenates the layers into
+one tar with the whiteouts already applied: it reads the image as one stream,
+where the pull unpacks each layer as its blob lands and names the layer that
+refused an entry. `mkfs.erofs --tar`, which reads the archive and writes the
+image in one external binary, treated in the entry on the disk.
+
 ## 2026-09-18: Apple `container` is no longer a backend of cove
 
 **Decided.** Supporting Apple `container` is no longer in the target, so the
@@ -113,10 +143,10 @@ network. The two rules serve the same promise, to say what actually ran.
 v0.22.1, published 2026-09-04 and still the latest on the proxy on
 2026-09-18: `pkg/name` for the references, `pkg/v1/remote` for the registry,
 `authn.DefaultKeychain` for the credentials the user already has, `pkg/v1`
-and the reading of `pkg/v1/layout` for the store. Later, `mutate.Extract`
-flattens the layers into one tar with the whiteouts applied; the untar into a
-rootfs stays cove's own code, since it is the one step that parses hostile
-data on the host and it is short enough to be read whole.
+and the reading of `pkg/v1/layout` for the store. The layers are read
+one by one by `internal/layer`, never by `mutate.Extract`: reading the archive
+of a layer is the one step that parses hostile data on the host, and it is
+cove's own code.
 
 **Measured** on the same program written twice (parse of a reference,
 platform `linux/arm64`, keychain, pull), compiled with Go 1.26 on macOS 26.5:
