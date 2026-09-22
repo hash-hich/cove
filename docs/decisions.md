@@ -18,6 +18,32 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-22: a disk is reproducible
+
+**Decided.** The same layer converted twice gives the same bytes, on any host
+and in any order. Everything the archive of a layer leaves undated takes
+`SOURCE_DATE_EPOCH`, the default zero included; the value is read once, when
+the cache opens, and refused when it is not a number of seconds. Each blob is
+fingerprinted with sha256 as it is written, and the fingerprint is kept in
+`meta.json` next to it.
+
+**Why.** A disk is keyed by the diff id of its layer, below, so the cache
+serves one host's disk to another run without ever comparing the two.
+Reproducible is what makes that key honest: same diff id, same bytes, which is
+also why an epoch other than the default changes the key. The writer is given a
+build time rather than a clock, and the dates of the files come from the
+archive itself. The date of a conversion is a fact about that conversion, so it
+lives in `meta.json` and never inside the blob. The fingerprint is computed
+once, at write, and never again: it says which conversion wrote the blob, which
+recomputing it on a read could not.
+
+**Rejected.** Dating the undated entries with the clock of the conversion: two
+runs of the same layer then differ for no reason a report can name. Ignoring a
+`SOURCE_DATE_EPOCH` that is not a number of seconds: the blobs come out dated
+by something nothing explains. One key per layer with the epoch recorded only
+in `meta.json`: a conversion running without the variable would be served a
+blob dated by it.
+
 ## 2026-09-22: a disk is keyed by the diff id of its layer
 
 **Decided.** A converted layer lives in one directory of the cache of the
