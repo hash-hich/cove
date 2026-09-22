@@ -3,6 +3,7 @@ module gitlab.com/hich-hich/cove
 go 1.26
 
 require (
+	github.com/erofs/go-erofs v0.3.2-0.20260901071538-03d68d88381c
 	github.com/google/go-containerregistry v0.22.1
 	github.com/stretchr/testify v1.12.1
 )
