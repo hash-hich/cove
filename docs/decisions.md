@@ -18,6 +18,39 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-21: the disk writer is go-erofs
+
+**Decided.** `github.com/erofs/go-erofs` writes the disks, rather than a
+serializer of cove's own, vendored like the rest at
+`v0.3.2-0.20260901071538-03d68d88381c`, commit `03d68d8` of 2026-09-01, and
+not at v0.3.1, the latest tag. The pin moves to a tag the day one covers that
+commit, and every bump is measured again against `mkfs.erofs`.
+
+**Why.** Cove does not own the format. Writing the serializer means
+superblock, inode layout, directory blocks, shared table of extended
+attributes and the planning of the nids. The library judges itself against the
+reference implementation, its test helper calling `mkfs.erofs --tar=f --aufs`,
+the invocation of the containerd differ. It is maintained by `hsiangkao`,
+author of EROFS and of `erofs-utils`, and by `dmcgowan`, maintainer of
+containerd. It carries no module of its own, no cgo, Apache 2.0, `go 1.23`,
+4 900 lines. It sees neither the network nor the credentials. Its output is a
+file in the cache, read by the kernel of the guest and not by the host.
+
+The pin is seven commits ahead of the tag, and cove needs each of them. An untagged commit promises
+nothing: the API can move, and a rebase upstream takes the hash away.
+Vendoring contains it, since the source is in the repository and the build
+reads it rather than the proxy.
+
+**Rejected.** Writing the serializer in cove, above. v0.3.1 plus a fork
+carrying the seven commits: the same code, a fork to maintain, a rebase to
+follow. Waiting for a v0.3.2, which is not a plan. hcsshim `ext4/tar2ext4`,
+the only Go writer that does the whole job: seven indirect modules and 11 MB
+of `vendor/` pulled in through a logging helper, and it takes the tar itself,
+which leaves the loop of `internal/layer` nowhere to stand. `mkfs.erofs --tar`
+and `mke2fs -d`: an external binary to ship and pin, a Homebrew formula on
+macOS, and for `mke2fs` the intermediate directory on the host that the target
+removed. `mkfs.erofs` stays the oracle of the tests.
+
 ## 2026-09-21: the rootfs disk is EROFS
 
 **Decided.** EROFS for the read only disk a run mounts, over ext4.
