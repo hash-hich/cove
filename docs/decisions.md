@@ -18,6 +18,36 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-22: the rootfs is one blob per layer, not one disk per image
+
+**Decided.** Each layer of an image becomes one EROFS disk of its own, and the
+guest stacks them with overlayfs in the order of the manifest, the highest
+first. Cove flattens nothing: the whiteouts are written as overlay markers and
+read by the guest kernel. The mount carries `xino=on`, and an image with more
+layers than the architecture can attach disks is refused, naming both numbers.
+
+**Why.** A blob depends on one archive and nothing else, so it converts on its
+own core while the other layers are still downloading, where a flattened disk
+applies the layers in series after the network. Two images on the same base
+convert it once, since the cache is keyed by diff id and never by image. A blob
+is a function of one archive, so it is reproducible whatever the order of the
+run. The ceiling is a constant of the virtual machine monitor and of the
+architecture, measured on libkrun HEAD `e6cdb55`, which has only virtio-mmio:
+around 115 disks on arm64, around 10 on x86_64, against 14 layers at most on
+the ten real images measured. `xino=on` is what the stacking costs: two files
+from two blobs can otherwise carry one `st_ino` in the merged view, since
+`CONFIG_OVERLAY_FS_XINO_AUTO` is off in libkrunfw, and a tool that deduplicates
+by `(st_dev, st_ino)` would read them as one file.
+
+**Rejected.** One flattened disk per image, the shape of nerdbox and of
+`mkfs.erofs --tar` on a concatenated stream: it serializes the conversion
+behind the download, converts a shared base once per image, and makes cove
+answer for the whiteouts at write time. A hard link from a layer to a file of a
+lower one, which two file systems cannot express: measured on ten real images,
+from alpine:3.21 to golang:1.25 and `devcontainers/base:debian`, around 180
+hard links and none crossing a layer, build tools emitting the link in the
+layer of its target. It stays a named failure.
+
 ## 2026-09-22: a disk is reproducible
 
 **Decided.** The same layer converted twice gives the same bytes, on any host
@@ -294,10 +324,11 @@ sha256 of each layer, and cove verifies both on the way into the store.
   does not ask while an image is pinned by digest and that digest is in the
   report. The day it is asked, `sigstore-go` alone answers it.
 - **The `containers-storage:` destination**, which keeps the layers separate
-  for the kernel to stack with overlayfs. Cove wants the opposite, one
-  flattened rootfs per digest and a throwaway copy per run, on a host that is
-  macOS first. The other transports are covered: `pkg/v1/layout` is `oci:`,
-  `pkg/v1/tarball` is `docker-archive:`, `pkg/v1/daemon` is `docker-daemon:`.
+  for the kernel to stack with overlayfs. Cove keeps them separate too, one
+  EROFS blob per layer, but in a cache of its own that it writes and reads
+  itself, on a host that is macOS first. The other transports are covered:
+  `pkg/v1/layout` is `oci:`, `pkg/v1/tarball` is `docker-archive:`,
+  `pkg/v1/daemon` is `docker-daemon:`.
 
 Two more settings of `registries.conf` are not losses.
 `unqualified-search-registries` would make the origin of an image depend on
