@@ -3,8 +3,20 @@
 What is decided now and why, for the decisions that bear on the choices still
 to come. Not a history: git is the history. The file is maintained like code,
 an entry amended when what it decides changes, and removed once what it holds
-can serve nothing. Newest first. Each entry says what was decided, why, and
-what was rejected.
+can serve nothing. Newest first.
+
+An entry is a dated title and three labels, in this order and no other:
+
+* The title states the solution, not the subject.
+* **Decided.** One or two sentences. It does not restate the title. What the
+  decision commits to from now on belongs here.
+* **Why.** Short sentences, one fact each.
+* **Rejected.** Every option weighed, each with the one fact that kills it.
+
+No label is added, split or renamed for one entry: a template that varies is
+no longer read. A rule about paths, file names or layout is not a decision and
+goes to the spec or the code comment that owns it. An entry past thirty lines
+is carrying something that belongs somewhere else.
 
 ## 2026-09-18: Apple `container` is no longer a backend of cove
 
