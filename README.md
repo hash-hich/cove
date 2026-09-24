@@ -67,3 +67,5 @@ Any agent you can install in the image runs here.
   cove is built to be.
 - [Decisions](docs/decisions.md): what was chosen, why, and what was turned
   down.
+- [Bring your own image](images/README.md): what an image must hold, and what
+  cove does with each instruction of its Dockerfile.
