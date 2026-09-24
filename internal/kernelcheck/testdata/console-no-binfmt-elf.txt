@@ -1,0 +1,12 @@
+ show_stack+0x1c/0x30 (C)
+ dump_stack_lvl+0x5c/0x78
+ dump_stack+0x14/0x1c
+ vpanic+0xf4/0x2b8
+ panic+0x64/0x70
+ kernel_init+0xdc/0x138
+ ret_from_fork+0x10/0x20
+SMP: stopping secondary CPUs
+Kernel Offset: disabled
+CPU features: 0x000000,00006000,42242281,94267727
+Memory Limit: none
+---[ end Kernel panic - not syncing: Requested init /sbin/vminitd failed (error -8). ]---
