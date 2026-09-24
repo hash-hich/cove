@@ -12,6 +12,12 @@ const (
 	// two blobs can be given one st_ino, and anything that tells files apart by inode number
 	// would take them for one.
 	xinoOn = "xino=on"
+	// redirectDirOn lets a directory that comes from a blob be renamed in the merged view: without
+	// it the rename fails with EXDEV, which pip install --upgrade meets on a package of the image.
+	// It is a mount option rather than a guest kernel default, so that a kernel of the user gets
+	// it too. What it costs elsewhere, an upper layer no older kernel can mount, is nothing here:
+	// the upper of a run is thrown away with it and never mounted anywhere else.
+	redirectDirOn = "redirect_dir=on"
 	// mountRoot is where the blobs are mounted in the guest, one directory per disk. The names
 	// are short on purpose: the kernel takes a page of options for a mount and truncates what
 	// does not fit, and fifty of these hold in a few hundred bytes.
@@ -96,7 +102,7 @@ func (c *Cache) planUnder(img Image, layers []Blob, ceiling int) (Plan, error) {
 		Image:           img.Ref,
 		ImageDigest:     img.Digest,
 		SourceDateEpoch: c.epoch,
-		MountOptions:    []string{xinoOn},
+		MountOptions:    []string{xinoOn, redirectDirOn},
 		Layers:          make([]Mount, 0, len(layers)),
 	}
 	// The plan lists the highest layer first, the order overlayfs reads its lower directories
