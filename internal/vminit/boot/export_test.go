@@ -10,4 +10,5 @@ var (
 	ResolveIn      = resolveIn
 	DiskOrder      = diskOrder
 	MatchDisks     = matchDisks
+	CheckWriteDisk = checkWriteDisk
 )
