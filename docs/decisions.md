@@ -18,6 +18,28 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-24: the init reads its run from a second archive of its initramfs
+
+**Decided.** The host describes a run in `/cove/run.json`, in a cpio archive
+laid after the one that holds the init; the init reads it before it mounts
+anything. The disks are found in their order of attachment, the layers, then
+the write disk, and a count or a size that differs from the description
+refuses the run by naming the layer; a refusal is a line of the init on the
+console, and the VM powers off.
+
+**Why.** The kernel unpacks archives laid end to end into one root, so the
+archive of the init is written once per version of cove and a run adds a few
+hundred bytes. The order of attachment holds on Virtualization.framework,
+measured through vfkit with seventeen disks. The size catches a disk missing,
+added or out of place, not two layers of one size swapped. The virtio serial
+of a disk would name it, and vfkit sets it, but no backend is known yet to set
+it on every platform.
+
+**Rejected.** A disk holding the description, as fly.io: one disk fewer for
+the layers. The kernel command line: 2048 bytes, short of the environment of
+an image and fifty layers. The vsock: the channel of the turns is not decided,
+and the description is needed before it.
+
 ## 2026-09-23: the agent runs on the VM, the image is its root
 
 **Decided.** The image is the root of the VM and the agent runs on it as a
