@@ -6,6 +6,7 @@ hand it its run. The packages are split by where they run.
 | Package | Runs on | What it holds |
 |---|---|---|
 | [spec](spec/) | host and VM | `run.json`, the description of a run the host writes and the init reads |
+| [initramfs](initramfs/) | host | the archive the kernel boots the init from, with `run.json` |
 
 The init is a binary of its own but not a module of its own. Cove puts it in
 the initramfs of every run, so the two are built from one commit, and `spec`,
