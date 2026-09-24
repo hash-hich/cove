@@ -7,6 +7,7 @@ hand it its run. The packages are split by where they run.
 |---|---|---|
 | [spec](spec/) | host and VM | `run.json`, the description of a run the host writes and the init reads |
 | [initramfs](initramfs/) | host | the archive the kernel boots the init from, with `run.json` |
+| [launch](launch/) | VM | the processes of the image, in the mount namespace of the agent |
 | [imageuser](imageuser/) | VM | the `User` of the image, resolved as runc does |
 
 The host never links what runs in the VM: the `vminit` rule of depguard, in

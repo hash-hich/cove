@@ -65,8 +65,11 @@ linters:
         vminit:
           files:
             - "$all"
+            - "!**/internal/vminit/launch/**"
             - "!**/internal/vminit/imageuser/**"
           deny:
+            - pkg: gitlab.com/hich-hich/cove/internal/vminit/launch
+              desc: the launcher runs in the VM, the host never links it
             - pkg: gitlab.com/hich-hich/cove/internal/vminit/imageuser
               desc: the User of an image is resolved in the VM, the host never links it
     dupl:
