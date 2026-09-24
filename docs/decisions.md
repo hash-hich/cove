@@ -66,8 +66,8 @@ not remove one.
 **Decided.** Each layer of an image becomes one EROFS disk of its own, and the
 guest stacks them with overlayfs in the order of the manifest, the highest
 first. Cove flattens nothing: the whiteouts are written as overlay markers and
-read by the guest kernel. The mount carries `xino=on`, and an image with more
-layers than the architecture can attach disks is refused, naming both numbers.
+read by the guest kernel. The mount carries `xino=on` and `redirect_dir=on`;
+an image with more layers than the VM can attach disks is refused, naming both.
 
 **Why.** A blob depends on one archive and nothing else, so it converts on its
 own core while the other layers are still downloading, where a flattened disk
@@ -80,7 +80,8 @@ around 115 disks on arm64, around 10 on x86_64, against 14 layers at most on
 the ten real images measured. `xino=on` is what the stacking costs: two files
 from two blobs can otherwise carry one `st_ino` in the merged view, since
 `CONFIG_OVERLAY_FS_XINO_AUTO` is off in libkrunfw, and a tool that deduplicates
-by `(st_dev, st_ino)` would read them as one file.
+by `(st_dev, st_ino)` would read them as one file. Without `redirect_dir=on`,
+renaming a directory of a blob fails with EXDEV, measured in the guest.
 
 **Rejected.** One flattened disk per image, the shape of nerdbox and of
 `mkfs.erofs --tar` on a concatenated stream: it serializes the conversion
