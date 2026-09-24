@@ -18,6 +18,31 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-24: the write disk is copied from a template mkfs.ext4 made
+
+**Decided.** Nothing formats a write disk at run time: cove writes the blocks
+of an empty ext4 that a pinned `mkfs.ext4` made at the build, one template per
+size from 8g to 1t, and leaves the rest of the file a hole. `--disk` asks for
+the size, 64g by default, lowered to what the host has free past a margin of
+4g; a full disk is an `ENOSPC` in the VM, and the run goes on. Cove alone
+removes the disk, and unlinks it as soon as `cove-vmm` holds its descriptor
+when the sandbox goes with its VM. `--keep` is gone.
+
+**Why.** A template is copied, not written, so `mkfs.ext4` stays a tool of the
+build and the entry of 2026-09-21 holds. Measured, an empty ext4 keeps 2.2 MiB
+of blocks that are not zero at 8g and 14 MiB at 1t, 3 MiB compressed for the
+eight, and two builds give the same bytes. The host pays for what a run writes,
+never for the size, and the size costs the VM no memory. A file without a name
+lives as long as a descriptor holds it, so a `cove-vmm` that dies, killed or
+not, leaves nothing behind. Nothing on the host reads an ext4, so a kept disk
+could only be booted again, which no verb does.
+
+**Rejected.** A static `mke2fs` in the initramfs: a C binary per architecture
+for a freedom of size a sparse file does not need. Formatting from the image:
+the write layer is cove's. An ext4 writer in Go: the entry of 2026-09-21. A
+sweep of orphans at the next command: the host fills until it runs. Killing
+the run at a full disk: the agent can free space, and the host is safe already.
+
 ## 2026-09-24: the agent is started as runc starts a docker exec
 
 **Decided.** Of the image configuration, the init applies `User` in its six
@@ -50,8 +75,7 @@ on.
 layers and formatted ext4. It holds the upper and the work directory of the
 overlay, and a directory per `VOLUME` of the image, filled with what the image
 holds at that path and bound on it. The init refuses a disk another run wrote
-on. Its size, who formats it and who removes it are left to the lifecycle of
-the run.
+on.
 
 **Why.** An overlay cannot take its upper on another overlay, so an engine the
 agent runs needs a real file system under its directory of data: measured, the
