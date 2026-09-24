@@ -18,6 +18,19 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-23: the guest reaches the network through virtio-net
+
+**Decided.** Every backend gives the guest a virtio-net card wired to
+`cove-proxy`. TSI is
+never enabled, and `cove-vmm` holds no network socket.
+
+**Why.** `cove-proxy` and its TCP/IP stack exist whatever libkrun offers:
+Firecracker has no TSI, and a kernel of the user has it only if it carries the
+libkrunfw patches, out of tree since the start. TSI would add a second path,
+not remove one.
+
+**Rejected.** TSI
+
 ## 2026-09-22: the rootfs is one blob per layer, not one disk per image
 
 **Decided.** Each layer of an image becomes one EROFS disk of its own, and the
