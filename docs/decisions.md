@@ -18,6 +18,32 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-24: the agent is started as runc starts a docker exec
+
+**Decided.** Of the image configuration, the init applies `User` in its six
+forms, resolved in the image's `/etc/passwd` and `/etc/group` by the rules of
+runc, and `Env` over what docker sets before it, `HOME` taken from
+`/etc/passwd` when neither sets it; `StopSignal` stops a process, `SIGKILL`
+follows ten seconds later, and `Entrypoint` and `Cmd` never run. The project
+lands in `<WorkingDir>/<repository>`, `/work` when `WorkingDir` is empty or
+`/`; an image that already holds that directory is refused.
+
+**Why.** Images are tested against runc, so its rules are copied rather than
+improved. The agent is started at each turn, and nothing of the image runs
+before it: an entrypoint that prepares the environment is what an image author
+has to know about. A `WORKDIR` says where the image expects to work, and the
+project goes inside it rather than on it, so the dotfiles of a home stay. A VM
+without systemd starts at 4096 open files, and dockerd and node count on the
+limit docker raised, so every process starts with a hard limit of 1048576 and
+a umask of 022. No capability is dropped and no filter is set: the VM is the
+boundary (2026-09-23).
+
+**Rejected.** Running `Entrypoint`: the profiles already launch no command
+(2026-09-13), and the agent is not a service. The project at `WorkingDir`
+itself: a `WORKDIR` on a home would make the home the repository. Names
+resolved in the initramfs or on the host: neither is the system the agent runs
+on.
+
 ## 2026-09-24: a run writes on one ext4 disk of its own
 
 **Decided.** The write disk of a run is one virtio-blk disk, attached after the
@@ -503,9 +529,9 @@ for, before anything is spent: a name without a registry (`demo`,
 local store, one that names its registry (`ghcr.io/...`, `localhost:5000/...`)
 is pulled when absent. Once the VM runs and before the repository enters it,
 `claude --version` is the one check of the image, and a VM that fails it is
-removed. A profile must keep the agent, `/work` as the working directory, the
-first launch state of the agent in its home, and no command launched by
-default; nothing else is verified. `images/go` is the maintained profile, Go
+removed. A profile must keep the agent, the first launch state of the agent
+in its home, and no command launched by default; nothing else is verified, and
+the project lands in its `WorkingDir` (2026-09-24). `images/go` is the maintained profile, Go
 and golangci-lint pinned to the versions of the workstation, whose only
 commitment is that cove builds, lints and tests in it.
 
