@@ -18,6 +18,34 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-23: the agent runs on the VM, the image is its root
+
+**Decided.** The image is the root of the VM and the agent runs on it as a
+process, root on the real root, in a mount namespace of its own under cove's
+init, which is PID 1 from an initramfs and stays so. Cove ships no guest root,
+no runtime and no engine: the kernel's configuration is the only policy
+inside, what the kernel compiles is permitted, and a real file system is
+mounted under the write layer and on every path the image declares as `VOLUME`.
+
+**Why.** The boundary is the hypervisor, and nothing in the VM belongs to
+anyone (2026-09-07). The engine comes from the image, at nerdbox too, so
+neither model has to ship one. An envelope's limits are a policy, and an
+agent that runs Docker forces the privileged one, where the envelope
+separates nothing. With a kernel of the user, running on the VM leaves kernel
+and userland to one owner; a container puts cove's runtime on a kernel it did
+not choose. A container adds a root and a runtime per architecture to keep in
+step with kernel and VMM, and one disk under a ceiling of about ten on x86_64.
+libkrun is built for the agent on the VM.
+
+**Rejected.** A privileged container by default, the `-docker` mode of sbx: the
+same plus a runtime, a root and a disk, separating nothing. Two modes, as sbx:
+a second mode to document, test and explain at every refusal. An unprivileged
+container alone: it breaks the nested engine. The image root as the root of
+the init: the initramfs is needed to stack the layers anyway, and the mount
+namespace it keeps costs nothing. Injecting the agent into any image, as the
+kits of sbx: a mounted binary must match the libc of the image, and the image
+carries the agent (2026-09-13).
+
 ## 2026-09-23: cove's kernel is kernel.org Linux, configured from allnoconfig
 
 **Decided.** The default guest kernel is an unpatched longterm Linux from
