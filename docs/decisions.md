@@ -18,6 +18,35 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-23: cove's kernel is kernel.org Linux, configured from allnoconfig
+
+**Decided.** The default guest kernel is an unpatched longterm Linux from
+kernel.org, 6.18 today, built from `allnoconfig` with `EXPERT` by the fragments
+of `kernel/config/` alone, without modules, for arm64 and x86_64, and
+permissive enough for a development workstation: the agent's own sandboxes,
+container engines, Kubernetes in containers, FUSE, loop, perf and eBPF with
+BTF. Its identity is the sha256 of the file the host hands the VMM. A kernel
+the user brings is accepted when it meets the list of `internal/kernelcheck`,
+read in its file before boot, else from `/proc/config.gz`, so a kernel without
+`IKCONFIG` is refused. Speculative execution mitigations are off.
+
+**Why.** Without TSI, no patch set ties cove to a branch: the libkrunfw series
+applies to 6.12 only, 19 of its 36 patches failing on 6.18.53. From
+`allnoconfig` a new version turns nothing on that a fragment does not name,
+and the build fails when a dependency drops a fragment line. Each fragment was
+measured by a boot with `dockerd` 29 and a boot without it: without the
+Kubernetes matches, kind reports ready and every service is dead; without BTF
+no eBPF tool runs, since no image carries the headers of cove's kernel. Two
+builds give the same sha256. Mitigations protect the guest from the agent,
+and nothing in the guest is protected (the ADR of the same day).
+
+**Rejected.** libkrunfw as a library: no initramfs, no embedded configuration,
+no netfilter for `dockerd`. libkrunfw as a source: a patched 6.12 with TSI gone
+to justify it. A base configuration from Apple, Firecracker or Kata: none meets
+the list, and their changes would land unread. Modules: the init needs its
+options before any `/lib/modules`, and the kernel stops being one file. IPVS:
+not the default mode of kube-proxy.
+
 ## 2026-09-23: the guest reaches the network through virtio-net
 
 **Decided.** Every backend gives the guest a virtio-net card wired to
