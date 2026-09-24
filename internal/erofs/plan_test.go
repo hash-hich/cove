@@ -43,7 +43,9 @@ func TestLaysOutOneDiskPerLayerUnderTheCeiling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, anImage.Ref, p.Image)
 	require.Equal(t, anImage.Digest, p.ImageDigest)
-	require.Equal(t, []string{"xino=on"}, p.MountOptions)
+	// redirect_dir=on lets a directory of a lower layer be renamed, which pip install --upgrade
+	// does to a package of the image: without it the rename fails with EXDEV.
+	require.Equal(t, []string{"xino=on", "redirect_dir=on"}, p.MountOptions)
 	require.Len(t, p.Layers, 3)
 	// The highest layer comes first, the order overlayfs reads its lower directories in.
 	for i, want := range []erofs.Blob{layers[2], layers[1], layers[0]} {
