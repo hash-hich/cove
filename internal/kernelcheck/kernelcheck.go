@@ -64,7 +64,7 @@ var required = []string{
 	"CONFIG_EPOLL",
 	"CONFIG_EVENTFD",
 	// What the init mounts: /proc, /sys, /dev and its disks, /dev/pts for the terminal of an
-	// attached turn, tmpfs for /run and /dev/shm.
+	// attached turn, tmpfs for /dev/shm.
 	procFS,
 	"CONFIG_SYSFS",
 	"CONFIG_DEVTMPFS",
