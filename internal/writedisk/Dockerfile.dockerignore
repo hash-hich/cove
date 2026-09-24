@@ -1,0 +1,6 @@
+*
+!go.mod
+!go.sum
+!vendor
+!cmd/cove-template
+!internal/writedisk/*.go
