@@ -10,6 +10,7 @@ import (
 	"gitlab.com/hich-hich/cove/internal/agent"
 	"gitlab.com/hich-hich/cove/internal/cli"
 	"gitlab.com/hich-hich/cove/internal/image"
+	"gitlab.com/hich-hich/cove/internal/writedisk"
 )
 
 const (
@@ -83,7 +84,8 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "unknown flag", args: []string{"--bogus"}},
 		{name: "run unknown flag", args: runArgs("--bogus", repo), wantStderr: unknownFlag},
 		{name: "run docker session flags", args: runArgs("-it", repo), wantStderr: "not defined: -it"},
-		{name: "run rm and keep", args: runArgs("--rm", "--keep", repo), wantStderr: "mutually exclusive"},
+		{name: "run keep", args: runArgs("--keep", repo), wantStderr: "not defined: -keep"},
+		{name: "run disk off the list", args: runArgs("--disk", "10g", repo), wantStderr: "8g, 16g, 32g, 64g"},
 		{name: "run bad cpus", args: runArgs("--cpus", "x", repo), wantStderr: "invalid value"},
 		{name: "run empty image", args: runArgs("--image", "", repo), wantStderr: "--image must name an image"},
 		{name: "run negative cpus", args: runArgs("--cpus", "-1", repo), wantStderr: "must be positive"},
@@ -190,7 +192,7 @@ func TestParseRun(t *testing.T) {
 	t.Parallel()
 
 	// base is what run parses when no flag is given: the default image and nothing else.
-	base := cli.SandboxSpec{Image: image.DefaultImage}
+	base := cli.SandboxSpec{Image: image.DefaultImage, Disk: writedisk.DefaultCap}
 	tests := []struct {
 		name string
 		args []string
@@ -201,22 +203,25 @@ func TestParseRun(t *testing.T) {
 		{
 			name: "every flag",
 			args: []string{
-				"-b", fix, "--name", demo, "--image", goImage, "--keep", "--cpus", "2", "-m", "4G",
+				"-b", fix, "--name", demo, "--image", goImage, "--cpus", "2", "-m", "4G", "--disk", "256g",
 				"-e", "FOO=bar", "-e", "TERM", repo,
 			},
 			want: cli.RunOptions{
 				Spec: cli.SandboxSpec{
-					Image: goImage, Name: demo, Keep: true, CPUs: 2, Memory: "4G", Env: []string{"FOO=bar", "TERM"}, Branch: fix,
+					Image: goImage, Name: demo, CPUs: 2, Memory: "4G", Disk: 256 << 30, Env: []string{"FOO=bar", "TERM"},
+					Branch: fix,
 				},
 				URL: repo,
 			},
 		},
 		{
 			name: longForms,
-			args: []string{"--branch=fix", "--image=" + goImage, "--memory=4G", "--env=BAR=baz", repo},
+			args: []string{"--branch=fix", "--image=" + goImage, "--memory=4G", "--disk=64G", "--env=BAR=baz", repo},
 			want: cli.RunOptions{
-				Spec: cli.SandboxSpec{Image: goImage, Memory: "4G", Env: []string{"BAR=baz"}, Branch: fix},
-				URL:  repo,
+				Spec: cli.SandboxSpec{
+					Image: goImage, Memory: "4G", Disk: writedisk.DefaultCap, Env: []string{"BAR=baz"}, Branch: fix,
+				},
+				URL: repo,
 			},
 		},
 	}

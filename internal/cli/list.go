@@ -77,7 +77,7 @@ of docker ps.
 Aliases: cove ls, cove ps
 
 Options:
-  -a, --all             Show the stopped sandboxes too, those a run kept (--keep)
+  -a, --all             Show the stopped sandboxes too
   -q, --quiet           Only print the sandbox IDs, one per line
       --format string   Output format, table or json (default table)
 
