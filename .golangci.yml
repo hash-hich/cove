@@ -60,6 +60,15 @@ linters:
           deny:
             - pkg: path/filepath
               desc: the loop works on path and strings, the rules of the host stay out of a layer
+        # The init runs in the VM. The host writes its description and its archive, and never
+        # links what runs inside.
+        vminit:
+          files:
+            - "$all"
+            - "!**/internal/vminit/imageuser/**"
+          deny:
+            - pkg: gitlab.com/hich-hich/cove/internal/vminit/imageuser
+              desc: the User of an image is resolved in the VM, the host never links it
     dupl:
       # Lower values flag table-driven tests.
       threshold: 100
