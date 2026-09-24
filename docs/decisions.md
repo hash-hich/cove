@@ -18,6 +18,28 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-24: a run writes on one ext4 disk of its own
+
+**Decided.** The write disk of a run is one virtio-blk disk, attached after the
+layers and formatted ext4. It holds the upper and the work directory of the
+overlay, and a directory per `VOLUME` of the image, filled with what the image
+holds at that path and bound on it. The init refuses a disk another run wrote
+on. Its size, who formats it and who removes it are left to the lifecycle of
+the run.
+
+**Why.** An overlay cannot take its upper on another overlay, so an engine the
+agent runs needs a real file system under its directory of data: measured, the
+`dockerd` 29 of `docker:29-dind` takes the overlayfs driver on the volume and
+runs a container. A tmpfs holds in the memory of the VM whatever the agent
+installs and builds, where memory is already the floor of a sandbox on macOS.
+One disk for every volume keeps the disks of x86_64 for the layers. A volume is
+filled by a copy, as docker fills an anonymous volume, since a stack is what
+the engine cannot take.
+
+**Rejected.** A tmpfs for the upper: memory, and no engine on it. A disk per
+volume: each one takes a disk from the layers. The project off the overlay, on
+the disk directly: the upper is on ext4 already, and nothing measured needs it.
+
 ## 2026-09-24: the init reads its run from a second archive of its initramfs
 
 **Decided.** The host describes a run in `/cove/run.json`, in a cpio archive
