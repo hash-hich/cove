@@ -1,7 +1,7 @@
 package agent
 
-// program is Claude Code as the image installs it, found on the PATH of the VM.
-const program = "claude"
+// Program is Claude Code as the image installs it, found on the PATH of the VM.
+const Program = "claude"
 
 // Args returns the command line of the agent for t, as it runs inside the VM. The backend carries
 // it in, and gives it a terminal when Prompt is empty, which is the attached regime.
@@ -27,7 +27,7 @@ const program = "claude"
 // The prompt comes after --, so that one starting with a dash is a prompt and not a flag of claude
 // (measured: without it, a prompt of --version prints the version and exits 0).
 func (t Turn) Args() []string {
-	args := []string{program, "--dangerously-skip-permissions"}
+	args := []string{Program, "--dangerously-skip-permissions"}
 	switch {
 	case t.Continue:
 		args = append(args, "--continue")
