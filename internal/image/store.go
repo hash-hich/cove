@@ -230,6 +230,46 @@ func (s *Store) Index() (*v1.IndexManifest, error) {
 	return s.readIndex()
 }
 
+// Find returns the digest of the manifest the index records under ref, the reference as the user
+// wrote it or, for one that names its registry, as Parse makes it canonical. It returns false
+// when the store holds no image under ref.
+func (s *Store) Find(ref string) (v1.Hash, bool, error) {
+	index, err := s.readIndex()
+	if err != nil {
+		return v1.Hash{}, false, err
+	}
+	for _, m := range index.Manifests {
+		if m.Annotations[RefName] == ref {
+			return m.Digest, true, nil
+		}
+	}
+	return v1.Hash{}, false, nil
+}
+
+// Image returns the manifest named digest and the config it names, both read from the store.
+func (s *Store) Image(digest v1.Hash) (*v1.Manifest, *v1.ConfigFile, error) {
+	m, err := readBlob(s, digest, v1.ParseManifest)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read the manifest %s: %w", digest, err)
+	}
+	c, err := readBlob(s, m.Config.Digest, v1.ParseConfigFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read the config of %s: %w", digest, err)
+	}
+	return m, c, nil
+}
+
+// readBlob opens the blob h of s and returns what read makes of it.
+func readBlob[T any](s *Store, h v1.Hash, read func(io.Reader) (T, error)) (T, error) {
+	r, err := s.Blob(h)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	defer func() { _ = r.Close() }()
+	return read(r)
+}
+
 // readIndex parses index.json.
 func (s *Store) readIndex() (*v1.IndexManifest, error) {
 	data, err := os.ReadFile(s.inLayout(indexFile))

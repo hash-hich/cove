@@ -447,3 +447,57 @@ func TestDefaultRootWithoutXDG(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(home, ".cache", "cove"), root)
 }
+
+func TestFindAnImageByTheReferenceItWasRecordedUnder(t *testing.T) {
+	t.Parallel()
+
+	store, err := image.Open(t.TempDir())
+	require.NoError(t, err)
+	want := digestOf([]byte("manifest"))
+	require.NoError(t, store.Record(t.Context(), entry(tagged, want)))
+
+	got, ok, err := store.Find(tagged)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, want, got)
+
+	_, ok, err = store.Find("ghcr.io/org/other:tag")
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestImageReadsTheManifestAndItsConfigFromTheStore(t *testing.T) {
+	t.Parallel()
+
+	store, err := image.Open(t.TempDir())
+	require.NoError(t, err)
+	config := []byte(`{"architecture":"arm64","os":"linux","config":{"User":"agent","WorkingDir":"/home/agent"},` +
+		`"rootfs":{"type":"layers","diff_ids":["sha256:` + strings.Repeat("a", 64) + `"]}}`)
+	manifest := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json",` +
+		`"config":{"mediaType":"application/vnd.oci.image.config.v1+json","size":` +
+		strconv.Itoa(len(config)) + `,"digest":"` + digestOf(config).String() + `"},"layers":[]}`)
+	for _, blob := range [][]byte{config, manifest} {
+		_, err := store.Put(t.Context(), digestOf(blob), bytesOf(blob), image.Progress{})
+		require.NoError(t, err)
+	}
+
+	m, c, err := store.Image(digestOf(manifest))
+
+	require.NoError(t, err)
+	require.Equal(t, digestOf(config), m.Config.Digest)
+	require.Equal(t, "agent", c.Config.User)
+	require.Equal(t, "/home/agent", c.Config.WorkingDir)
+	require.Len(t, c.RootFS.DiffIDs, 1)
+}
+
+func TestImageNamesAManifestTheStoreDoesNotHold(t *testing.T) {
+	t.Parallel()
+
+	store, err := image.Open(t.TempDir())
+	require.NoError(t, err)
+	missing := digestOf([]byte("missing"))
+
+	_, _, err = store.Image(missing)
+
+	require.ErrorContains(t, err, missing.String())
+}
