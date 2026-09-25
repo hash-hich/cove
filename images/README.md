@@ -27,8 +27,9 @@ it.
   declares `VOLUME /var/lib/docker` (see [Volumes](#volumes)). `docker:dind`
   already does both.
 - **Not too many layers.** Each layer is one disk of the VM, and a VM takes
-  about 115 disks on arm64 and about 10 on x86_64. An image with more layers
-  is refused, naming both numbers.
+  about 115 disks on arm64 and about 10 on x86_64, one of which is the disk
+  it writes on. An image with more layers than the rest is refused, naming
+  both numbers.
 
 ## Instruction by instruction
 

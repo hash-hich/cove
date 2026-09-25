@@ -83,10 +83,11 @@ type Mount struct {
 }
 
 // Plan returns the mount plan of img, whose layers are the blobs layers in the order of the
-// manifest, the bottom layer first. Each layer takes a disk of its own.
+// manifest, the bottom layer first. Each layer takes a disk of its own, and the VM takes one more,
+// the disk it writes on.
 //
-// It fails, and nothing is attached, when the image has more layers than the architecture can
-// attach disks, the message naming both.
+// It fails, and nothing is attached, when the layers and the write disk are more than the
+// architecture can attach disks, the message naming both.
 func (c *Cache) Plan(img Image, layers []Blob) (Plan, error) {
 	return c.planUnder(img, layers, ceiling())
 }
@@ -94,9 +95,11 @@ func (c *Cache) Plan(img Image, layers []Blob) (Plan, error) {
 // planUnder is Plan with the ceiling given, so that an image over the ceiling is exercised on a
 // host whose architecture would never reach it.
 func (c *Cache) planUnder(img Image, layers []Blob, ceiling int) (Plan, error) {
-	if len(layers) > ceiling {
-		return Plan{}, fmt.Errorf("an image of %d layers does not fit on the %d disks of this architecture",
-			len(layers), ceiling)
+	// The write disk is attached after the layers, so an image that fills the ceiling on its own
+	// would fail late, in the monitor, rather than here with a message that names the cause.
+	if len(layers)+1 > ceiling {
+		return Plan{}, fmt.Errorf("an image of %d layers does not fit on the %d disks of this architecture, "+
+			"one of which is the disk the VM writes on", len(layers), ceiling)
 	}
 	p := Plan{
 		Image:           img.Ref,

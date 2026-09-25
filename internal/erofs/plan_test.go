@@ -38,7 +38,8 @@ func TestLaysOutOneDiskPerLayerUnderTheCeiling(t *testing.T) {
 	c := opened(t)
 	layers := tower(t, c, 3)
 
-	p, err := c.PlanWithCeiling(anImage, layers, 10)
+	// Three layers and the write disk fill a ceiling of four.
+	p, err := c.PlanWithCeiling(anImage, layers, 4)
 
 	require.NoError(t, err)
 	require.Equal(t, anImage.Ref, p.Image)
@@ -63,9 +64,9 @@ func TestRefusesAnImageThatDoesNotFitOnTheDisksOfTheArchitecture(t *testing.T) {
 	c := opened(t)
 	layers := tower(t, c, 3)
 
-	_, err := c.PlanWithCeiling(anImage, layers, 2)
+	_, err := c.PlanWithCeiling(anImage, layers, 3)
 
-	require.ErrorContains(t, err, "an image of 3 layers does not fit on the 2 disks")
+	require.ErrorContains(t, err, "an image of 3 layers does not fit on the 3 disks")
 }
 
 // mountpoints returns where the plan mounts each of its disks.
