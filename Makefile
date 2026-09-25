@@ -6,6 +6,9 @@
 # ARCHS are the architectures of the guest, as Go names them.
 ARCHS := arm64 amd64
 
+# HOSTARCH is the architecture of the host, which is the one of its guests.
+HOSTARCH := $(shell go env GOARCH)
+
 # BUILD names the tree cove and cove-vmm are built from: its commit, what differs from it, and
 # the files git does not track yet. cove refuses a cove-vmm of another build, since the two change
 # together.
@@ -13,14 +16,15 @@ BUILD := $(shell { git rev-parse HEAD; git diff HEAD; git ls-files -z -o --exclu
 	xargs -0 shasum -a 256; } | shasum -a 256 | cut -c 1-16)
 BUILD_LDFLAGS := -X gitlab.com/hich-hich/cove/internal/vmmproto.build=$(BUILD)
 
-# LIBEXEC holds what cove runs a VM with, found beside the bin directory of cove.
+# LIBEXEC holds what cove runs a VM with, found beside the bin directory of cove: cove-vmm, the
+# libkrun it links, the kernel and the init.
 LIBEXEC := libexec
 
 # mkemptyext4 runs in the image of its Dockerfile, where e2fsprogs is pinned, on the repository
 # mounted as it is.
 MKEMPTYEXT4 := docker run --rm -v "$(CURDIR)":/cove -w /cove/tools/mkemptyext4 cove-mkemptyext4
 
-.PHONY: help cove cove-init cove-vmm libkrun kernel image-sandbox image-go fmt lint test check \
+.PHONY: help cove cove-init cove-vmm libkrun libexec kernel image-sandbox image-go fmt lint test check \
 	emptyext4 emptyext4-check mkemptyext4-docker-image
 
 ## help: list the targets and what each one does
@@ -31,6 +35,11 @@ help:
 ## cove: build the CLI into bin/cove
 cove:
 	go build -ldflags "$(BUILD_LDFLAGS)" -o bin/cove ./cmd/cove
+
+## libexec: gather what cove runs a VM with into libexec: cove-vmm, libkrun, the kernel, the init
+libexec: cove-vmm cove-init
+	@test -f bin/kernel/$(HOSTARCH)/kernel || { echo "no bin/kernel/$(HOSTARCH)/kernel: make kernel first"; exit 1; }
+	cp bin/kernel/$(HOSTARCH)/kernel bin/cove-init/$(HOSTARCH)/cove-init $(LIBEXEC)/
 
 ## libkrun: build libkrun as third_party/libkrun.lock pins it into libexec/lib, see its build.sh
 libkrun:
