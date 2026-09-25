@@ -32,7 +32,7 @@ help:
 	@awk '/^## / { sub(/^## /, ""); i = index($$0, ": "); \
 		printf "%-26s %s\n", substr($$0, 1, i - 1), substr($$0, i + 2) }' $(MAKEFILE_LIST)
 
-## cove: build the CLI into bin/cove
+## cove: build the CLI into bin/cove; run needs libexec too
 cove:
 	go build -ldflags "$(BUILD_LDFLAGS)" -o bin/cove ./cmd/cove
 

@@ -14,7 +14,7 @@ import (
 const ExitUsage = 2
 
 // ExitPreflight is the exit code when cove itself could not carry a command out, as the 125 of
-// docker run. Every verb that needs a micro-VM returns it while the backend is being replaced.
+// docker run. send, stop and list return it until cove knows which sandboxes exist.
 const ExitPreflight = 125
 
 // App holds the streams of a cove invocation.
@@ -126,8 +126,8 @@ Commands:
   send    Talk to the agent of a sandbox
   stop    Stop sandboxes
 
-run, send, stop and list are not implemented yet: the micro-VM backend is being
-replaced. They validate their arguments, then exit 125 having done nothing.
+send, stop and list are not implemented yet: nothing tells them which sandboxes
+exist. They validate their arguments, then exit 125 having done nothing.
 `
 
 // printUsage writes the usage text and the flag defaults of fs to w.

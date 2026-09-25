@@ -29,6 +29,8 @@ const (
 	// repo and fix are the repository and the branch the run tests name.
 	repo = "https://forge.example/group/repo.git"
 	fix  = "fix"
+	// cpusRange is what run says of a number of vCPUs it refuses.
+	cpusRange = "takes 1 to 255 vCPUs"
 	// goImage is the profile the run tests name.
 	goImage = "cove-go:local"
 	// remote is the image the pull tests name, on its registry.
@@ -88,7 +90,14 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "run disk off the list", args: runArgs("--disk", "10g", repo), wantStderr: "8g, 16g, 32g, 64g"},
 		{name: "run bad cpus", args: runArgs("--cpus", "x", repo), wantStderr: "invalid value"},
 		{name: "run empty image", args: runArgs("--image", "", repo), wantStderr: "--image must name an image"},
-		{name: "run negative cpus", args: runArgs("--cpus", "-1", repo), wantStderr: "must be positive"},
+		{name: "run negative cpus", args: runArgs("--cpus", "-1", repo), wantStderr: cpusRange},
+		{name: "run no cpus", args: runArgs("--cpus", "0", repo), wantStderr: cpusRange},
+		{name: "run too many cpus", args: runArgs("--cpus", "256", repo), wantStderr: cpusRange},
+		{name: "run memory unit", args: runArgs("-m", "4t", repo), wantStderr: "a size such as 512m"},
+		{name: "run memory zero", args: runArgs("-m", "0", repo), wantStderr: "a size such as 512m"},
+		{name: "run memory in bytes", args: runArgs("-m", "1000000", repo), wantStderr: "a whole number of MiB"},
+		{name: "run memory too big", args: runArgs("-m", "4194304g", repo), wantStderr: "a whole number of MiB"},
+		{name: "run bad name", args: runArgs("--name", "-x", repo), wantStderr: "--name takes"},
 		{name: "run no url", args: runArgs(), wantStderr: "requires 1 argument"},
 		{name: "run command", args: runArgs(repo, "bash"), wantStderr: "takes no command"},
 		{name: "run git clone depth", args: runArgs("--depth", "1", repo), wantStderr: "not defined: -depth"},
@@ -192,7 +201,7 @@ func TestParseRun(t *testing.T) {
 	t.Parallel()
 
 	// base is what run parses when no flag is given: the default image and nothing else.
-	base := cli.SandboxSpec{Image: image.DefaultImage, Disk: writedisk.DefaultCap}
+	base := cli.SandboxSpec{Image: image.DefaultImage, CPUs: 2, MemoryMiB: 2048, Disk: writedisk.DefaultCap}
 	tests := []struct {
 		name string
 		args []string
@@ -203,23 +212,24 @@ func TestParseRun(t *testing.T) {
 		{
 			name: "every flag",
 			args: []string{
-				"-b", fix, "--name", demo, "--image", goImage, "--cpus", "2", "-m", "4G", "--disk", "256g",
+				"-b", fix, "--name", demo, "--image", goImage, "--cpus", "4", "-m", "4G", "--disk", "256g",
 				"-e", "FOO=bar", "-e", "TERM", repo,
 			},
 			want: cli.RunOptions{
 				Spec: cli.SandboxSpec{
-					Image: goImage, Name: demo, CPUs: 2, Memory: "4G", Disk: 256 << 30, Env: []string{"FOO=bar", "TERM"},
-					Branch: fix,
+					Image: goImage, Name: demo, CPUs: 4, MemoryMiB: 4096, Disk: 256 << 30,
+					Env: []string{"FOO=bar", "TERM"}, Branch: fix,
 				},
 				URL: repo,
 			},
 		},
 		{
 			name: longForms,
-			args: []string{"--branch=fix", "--image=" + goImage, "--memory=4G", "--disk=64G", "--env=BAR=baz", repo},
+			args: []string{"--branch=fix", "--image=" + goImage, "--memory=512m", "--disk=64G", "--env=BAR=baz", repo},
 			want: cli.RunOptions{
 				Spec: cli.SandboxSpec{
-					Image: goImage, Memory: "4G", Disk: writedisk.DefaultCap, Env: []string{"BAR=baz"}, Branch: fix,
+					Image: goImage, CPUs: 2, MemoryMiB: 512, Disk: writedisk.DefaultCap, Env: []string{"BAR=baz"},
+					Branch: fix,
 				},
 				URL: repo,
 			},
@@ -367,7 +377,6 @@ func TestVerbsWithoutABackend(t *testing.T) {
 		name string
 		args []string
 	}{
-		{name: "run creates nothing", args: runArgs(repo)},
 		{name: "send attached", args: sendArgs(demo)},
 		{name: "send driven", args: sendArgs(demo, "fix the ci")},
 		{name: "stop one target", args: stopArgs(demo)},

@@ -14,3 +14,9 @@ var ParseSend = parseSend
 
 // ParsePull exposes parsePull to the tests of the package.
 var ParsePull = parsePull
+
+// ProjectOf exposes projectOf to the tests of the package.
+var ProjectOf = projectOf
+
+// Environ exposes environ to the tests of the package.
+var Environ = environ

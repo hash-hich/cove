@@ -47,19 +47,23 @@ amend it, the next run goes further.
 
 ## Try it
 
-The micro-VM backend is being rebuilt. `run`, `send`, `stop` and `list` still
-take their arguments and still tell you when one is wrong, but they have
-nothing to run them with: each exits 125 and creates nothing. What the binary
-carries out today is the image side, on any host:
+`run` boots a micro-VM on a Mac with Apple silicon, on the image you name:
+the VM mounts the image and waits, but the repository does not reach it yet
+and no instruction reaches the agent. `send`, `stop` and `list` take their
+arguments and tell you when one is wrong, then exit 125.
 
 ```bash
-make cove
+make kernel             # the guest kernel, in Docker, once
+make cove libexec       # cove, and beside it cove-vmm, libkrun, the kernel and the init
 
 bin/cove pull ghcr.io/you/image:tag   # an image into ~/.cache/cove/images, by digest on stdout
+bin/cove run --image ghcr.io/you/image:tag https://gitlab.com/you/repo.git
 ```
 
-Go, with one dependency, go-containerregistry, justified in the decision log.
-Any agent you can install in the image runs here.
+`make libexec` builds libkrun from the commit `third_party/libkrun.lock` names,
+so it needs Rust at the version the lock gives. cove itself is Go, with the
+dependencies the decision log justifies. Any agent you can install in the
+image runs here.
 
 ## Read more
 
