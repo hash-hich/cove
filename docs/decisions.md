@@ -18,6 +18,30 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-25: libkrun is built by cove from a commit, its bytes kept out of git
+
+**Decided.** libkrun is named in `third_party/libkrun.lock` by the commit of
+its release tag, `v1.19.5` today, and the sha256 of that commit's
+`git archive`, with its `Cargo.lock` committed beside the build script.
+`make libkrun` fetches, checks and builds offline, with `blk` and `net` only.
+The kernel is cove's, set by `krun_set_kernel`, so libkrunfw is never loaded.
+A bump changes the lock and replays what was measured on the one before.
+
+**Why.** libkrun is maintained under Red Hat, runs Podman machine through
+krunkit, and has no alternative on macOS short of Virtualization.framework;
+it parses what the guest writes, so it is contained, not trusted. A tag can
+be moved, a commit cannot. Measured, the crates for macOS and Linux weigh
+63 MB, 279 MB unfiltered, where the Go `vendor/` weighs 12, and a checksum of
+`Cargo.lock` names the same bytes for good. The `git archive` gives one
+sha256 under git 2.50 and 2.54, and two builds in two directories give one
+library. Without the default feature, the C init of libkrun and its Debian
+sysroot are not built; cove boots its own from an initramfs.
+
+**Rejected.** Crates or source committed: tens of MB per bump, forever in the
+history. The Homebrew tap: a `brew upgrade` moves the library under cove. The
+archives GitHub generates: their compression changed once and broke every
+sha256. The dylib Podman ships: features cove does not choose, GPU included.
+
 ## 2026-09-24: the write disk is copied from an empty ext4 made outside cove
 
 **Decided.** Nothing formats a write disk at run time: cove writes the blocks
@@ -367,7 +391,9 @@ nothing is kept working for compatibility while the backend is replaced.
 from then on: pinned in `go.mod`, its sum in `go.sum`, its source under
 `vendor/`, the three changed in the same commit as the code that first imports
 the packages. `go mod vendor` follows every change of `go.mod`; the build reads
-the directory by default once it exists, so nothing else is configured.
+the directory by default once it exists, so nothing else is configured. What
+is not Go is not vendored: a native library is named by a lock of its own in
+`third_party/`, fetched, checked against its hashes and built offline.
 
 **Why.** Every line the binary links can be read in review: a bump of a
 dependency shows as a diff of source, where `go.sum` alone shows a changed
