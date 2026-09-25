@@ -1,0 +1,15 @@
+# libkrun, the virtual machine monitor cove-vmm links. The source is named by the commit of its
+# release tag, never by the tag, which can be moved: the tag is here for the reader. Its bytes stay
+# out of this repository, and third_party/libkrun/build.sh fetches them from each URL in turn,
+# checks them against the commit and against the sha256 of their git archive, and builds offline.
+# The crates are named with their checksums by third_party/libkrun/Cargo.lock, the lock of that
+# commit. A bump changes every line below and that lock in the same commit.
+LIBKRUN_URLS="https://github.com/libkrun/libkrun.git"
+LIBKRUN_TAG=v1.19.5
+LIBKRUN_COMMIT=fb988873026120e0e81b31295aaa4a05d27921f2
+LIBKRUN_ARCHIVE_SHA256=2fadf4a2cbdaff4767e4f04e3f380ab4749a66d8994abc1529c0459d8afb49aa
+# Only the devices cove attaches: virtio-blk for the disks, virtio-net for the card of cove-proxy.
+# The default feature, the init libkrun injects in a virtio-fs root, is left out: cove boots its
+# own init from an initramfs, and that init is C cross-compiled against a Debian sysroot.
+LIBKRUN_FEATURES=blk,net
+RUST_VERSION=1.92.0
