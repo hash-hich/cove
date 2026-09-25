@@ -6,11 +6,14 @@
 # ARCHS are the architectures of the guest, as Go names them.
 ARCHS := arm64 amd64
 
+# LIBEXEC holds what cove runs a VM with, found beside the bin directory of cove.
+LIBEXEC := libexec
+
 # mkemptyext4 runs in the image of its Dockerfile, where e2fsprogs is pinned, on the repository
 # mounted as it is.
 MKEMPTYEXT4 := docker run --rm -v "$(CURDIR)":/cove -w /cove/tools/mkemptyext4 cove-mkemptyext4
 
-.PHONY: help cove cove-init kernel image-sandbox image-go fmt lint test check \
+.PHONY: help cove cove-init libkrun kernel image-sandbox image-go fmt lint test check \
 	emptyext4 emptyext4-check mkemptyext4-docker-image
 
 ## help: list the targets and what each one does
@@ -21,6 +24,10 @@ help:
 ## cove: build the CLI into bin/cove
 cove:
 	go build -o bin/cove ./cmd/cove
+
+## libkrun: build libkrun as third_party/libkrun.lock pins it into libexec/lib, see its build.sh
+libkrun:
+	third_party/libkrun/build.sh $(LIBEXEC)/lib
 
 ## cove-init: build the init of the VM, static, into bin/cove-init/<arch>/cove-init for each guest
 cove-init:
