@@ -1,0 +1,13 @@
+; The Seatbelt profile of cove-vmm. Everything is denied, then allowed only what libkrun was seen
+; to be refused while it booted a VM: the rules were found from the denials the kernel logs
+; (log show --predicate 'eventMessage CONTAINS "cove-vmm-krun("'), one at a time.
+(version 1)
+(deny default)
+
+; The files of the VM are allowed after these rules, each by its exact path, as Enter writes
+; them: reading for the kernel, the initramfs and the layers, writing as well for the write disk
+; and the console. Nothing else is: not their directory, not another file of it, not a link.
+
+; Hypervisor.framework asks whether it runs in a VM itself, and libkrun sizes the memory of the
+; guest in pages of the host.
+(allow sysctl-read (sysctl-name "kern.hv_vmm_present" "hw.pagesize_compat"))
