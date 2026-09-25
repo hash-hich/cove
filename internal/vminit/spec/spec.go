@@ -17,6 +17,10 @@ import (
 // Path is where the description lies in the initramfs, and where the init reads it.
 const Path = "/cove/run.json"
 
+// WriteLabel is the label of the ext4 file system of every write disk, set when tools/mkemptyext4
+// makes the empty ext4 it starts from, and which the init reads before it mounts the disk.
+const WriteLabel = "cove-rw"
+
 // Run is one boot of a sandbox. The fields of the image are copied from its configuration as the
 // image declares them, the defaults left to the init: the rules on what cove does with them are
 // stated once, where they are applied.

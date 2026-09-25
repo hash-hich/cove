@@ -107,7 +107,9 @@ In the VM, the init of cove does them before the first turn.
 
 - **Mounts:** `/proc`, `/sys`, `/sys/fs/cgroup` as cgroup2, `/dev` as the whole
   devtmpfs rather than the few nodes docker gives, `/dev/pts` with its own
-  `/dev/ptmx`, `/dev/shm` and `/dev/mqueue`.
+  `/dev/ptmx`, `/dev/shm` and `/dev/mqueue`. `/run` and `/tmp` are a tmpfs, as
+  on a systemd machine: what the image holds there is hidden, and what the
+  agent writes there is in memory, not on the write disk.
 - **Name and resolvers:** the hostname is set, and `/etc/hostname`,
   `/etc/hosts` and `/etc/resolv.conf` are written as plain files, which the
   agent may edit. A link in their place is replaced.

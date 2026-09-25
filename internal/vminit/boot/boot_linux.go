@@ -165,8 +165,8 @@ func mountImage(s *spec.Run) error {
 			return fmt.Errorf("layer %s: %w", l.DiffID, err)
 		}
 	}
-	if err := mount("/dev/"+disks[len(disks)-1], "ext4", writeMount, 0, ""); err != nil {
-		return fmt.Errorf("the write disk: %w", err)
+	if err := mountWriteDisk(disks[len(disks)-1]); err != nil {
+		return err
 	}
 	// A run starts on an empty disk and leaves nothing to the next: an upper already there is what
 	// another run wrote.
@@ -178,6 +178,35 @@ func mountImage(s *spec.Run) error {
 		}
 	}
 	return mount("overlay", "overlay", rootMount, 0, overlayOptions(s))
+}
+
+// writeOptions are the options of the mount of the write disk. noinit_itable keeps the kernel from
+// zeroing the tables of inodes the empty ext4 leaves unwritten, which would grow the file of the host
+// by gigabytes for nothing. errors=remount-ro turns the whole disk read only at the first error of
+// I/O, at once and visibly, rather than failing writes one by one. nodiscard says that what a run
+// frees does not go back to the host, as long as no backend carries a discard to the file.
+const writeOptions = "errors=remount-ro,noinit_itable,nodiscard"
+
+// mountWriteDisk mounts the disk named disk on writeMount once its superblock says it is a write
+// disk.
+func mountWriteDisk(disk string) error {
+	f, err := os.Open("/dev/" + disk) //nolint:gosec // G304: disk is a disk the kernel lists.
+	if err != nil {
+		return fmt.Errorf("open the write disk: %w", err)
+	}
+	sb := make([]byte, superblockSize)
+	_, err = f.ReadAt(sb, superblockOffset)
+	_ = f.Close()
+	if err != nil {
+		return fmt.Errorf("read the superblock of %s: %w", disk, err)
+	}
+	if err := checkWriteDisk(disk, sb); err != nil {
+		return err
+	}
+	if err := mount("/dev/"+disk, "ext4", writeMount, unix.MS_NOATIME, writeOptions); err != nil {
+		return fmt.Errorf("the write disk: %w", err)
+	}
+	return nil
 }
 
 // virtioDisks returns the virtio disks of the VM in their order of attachment.
@@ -216,10 +245,12 @@ func matchDisksOf(s *spec.Run, disks []string) error {
 
 // mountSystem mounts in the image root the file systems every program expects, where docker would
 // have. /dev is the whole devtmpfs rather than the handful of nodes docker gives, and the
-// terminals are a devpts of their own, whose ptmx /dev/ptmx is. cgroup2 and mqueue are mounted
-// when the kernel has them: nothing of the init needs them, and what the image runs says itself
-// what it misses.
+// terminals are a devpts of their own, whose ptmx /dev/ptmx is. /run and /tmp are a tmpfs, as a
+// systemd machine mounts them: what they hold dies with the VM and never lands on the write disk.
+// cgroup2 and mqueue are mounted when the kernel has them: nothing of the init needs them, and
+// what the image runs says itself what it misses.
 func mountSystem(root string) error {
+	const tmpfs = "tmpfs"
 	mounts := []struct {
 		fstype, target string
 		flags          uintptr
@@ -231,8 +262,10 @@ func mountSystem(root string) error {
 		{"cgroup2", "/sys/fs/cgroup", unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC, "", true},
 		{"devtmpfs", "/dev", unix.MS_NOSUID, "", false},
 		{"devpts", "/dev/pts", unix.MS_NOSUID | unix.MS_NOEXEC, "newinstance,gid=5,mode=620,ptmxmode=666", false},
-		{"tmpfs", "/dev/shm", unix.MS_NOSUID | unix.MS_NODEV, "mode=1777", false},
+		{tmpfs, "/dev/shm", unix.MS_NOSUID | unix.MS_NODEV, "mode=1777", false},
 		{"mqueue", "/dev/mqueue", unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC, "", true},
+		{tmpfs, "/run", unix.MS_NOSUID | unix.MS_NODEV, "mode=755", false},
+		{tmpfs, "/tmp", unix.MS_NOSUID | unix.MS_NODEV, "mode=1777", false},
 	}
 	for _, m := range mounts {
 		target, err := resolveIn(root, m.target)

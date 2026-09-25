@@ -10,6 +10,8 @@
 package boot
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -175,6 +177,35 @@ func matchDisks(s *spec.Run, names []string, sizes []int64) error {
 	}
 	if last := len(names) - 1; sizes[last] != s.Write.Size {
 		return fmt.Errorf("disk %s holds %d bytes, the write disk is %d", names[last], sizes[last], s.Write.Size)
+	}
+	return nil
+}
+
+// Where the ext4 superblock and its fields lie, the superblock at superblockOffset on the disk and
+// the fields from its start.
+const (
+	superblockOffset = 1024
+	superblockSize   = 1024
+	ext4MagicOffset  = 0x38
+	ext4LabelOffset  = 0x78
+	ext4LabelSize    = 16
+	ext4Magic        = 0xef53
+)
+
+// checkWriteDisk checks sb, the superblock read on the disk named disk, against the empty ext4
+// every write disk starts from: an ext4 labelled spec.WriteLabel. The disks are found by their order and
+// sizes only, so the label is what tells the write disk from a layer of the same size, before the
+// init writes on it.
+func checkWriteDisk(disk string, sb []byte) error {
+	if len(sb) < superblockSize || binary.LittleEndian.Uint16(sb[ext4MagicOffset:]) != ext4Magic {
+		return fmt.Errorf("disk %s holds no ext4, it is not the write disk", disk)
+	}
+	label := sb[ext4LabelOffset : ext4LabelOffset+ext4LabelSize]
+	if i := bytes.IndexByte(label, 0); i >= 0 {
+		label = label[:i]
+	}
+	if string(label) != spec.WriteLabel {
+		return fmt.Errorf("disk %s is labelled %q, not %q: it is not the write disk", disk, label, spec.WriteLabel)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package boot_test
 
 import (
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,4 +128,24 @@ func TestTheDisksMustBeThoseOfTheRun(t *testing.T) {
 		"disk vda holds 20480 bytes, layer sha256:a is 8192")
 	require.EqualError(t, boot.MatchDisks(s, names, []int64{8192, 20480, 4096}),
 		"disk vdc holds 4096 bytes, the write disk is 1073741824")
+}
+
+// superblock returns the superblock of an ext4 labelled label, as the init reads it on a disk.
+func superblock(magic uint16, label string) []byte {
+	sb := make([]byte, 1024)
+	binary.LittleEndian.PutUint16(sb[0x38:], magic)
+	copy(sb[0x78:0x78+16], label)
+	return sb
+}
+
+func TestTheWriteDiskIsTheEmptyExt4OfCove(t *testing.T) {
+	t.Parallel()
+	require.NoError(t, boot.CheckWriteDisk("vdc", superblock(0xef53, spec.WriteLabel)))
+	require.EqualError(t, boot.CheckWriteDisk("vdc", superblock(0xef53, "data")),
+		`disk vdc is labelled "data", not "cove-rw": it is not the write disk`)
+	require.EqualError(t, boot.CheckWriteDisk("vdc", superblock(0xe0f5, spec.WriteLabel)),
+		"disk vdc holds no ext4, it is not the write disk")
+	require.EqualError(t, boot.CheckWriteDisk("vdc", superblock(0xef53, "cove-rw-extra-lo")),
+		`disk vdc is labelled "cove-rw-extra-lo", not "cove-rw": it is not the write disk`)
+	require.Error(t, boot.CheckWriteDisk("vdc", nil))
 }
