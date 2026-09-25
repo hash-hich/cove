@@ -72,6 +72,21 @@ func (c *Cache) Convert(ctx context.Context, l Layer, log io.Writer, onWait func
 	return b, nil
 }
 
+// Lookup returns the blob of the layer diffID when the cache holds it, and false when it does not:
+// the layer was never converted, or the cache was emptied since.
+func (c *Cache) Lookup(diffID string) (Blob, bool, error) {
+	key, err := keyOf(Layer{DiffID: diffID})
+	if err != nil {
+		return Blob{}, false, err
+	}
+	b, ok, err := lookup(c.layerEntry(key))
+	if !ok || err != nil {
+		return Blob{}, false, err
+	}
+	b.DiffID = diffID
+	return b, true, nil
+}
+
 // keyOf returns the key of the blob of l: the diff id of the layer, known before a byte is read, so
 // that the same layer compressed twice over is converted once. Without a diff id it falls back to
 // the digest of the compressed blob, which names those bytes and nothing more.

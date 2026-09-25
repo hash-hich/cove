@@ -87,3 +87,28 @@ func TestKeepsTheBlobsOfAWriterOfAnotherVersionApart(t *testing.T) {
 	require.True(t, strings.HasSuffix(filepath.Dir(c.Root()), "rootfs"),
 		"the blobs live beside the store of the images, not inside its layout")
 }
+
+func TestLookupServesAConvertedLayerByItsDiffID(t *testing.T) {
+	t.Parallel()
+
+	c := opened(t)
+	l := layerOf(t, file("a", "x"))
+	want := converted(t, c, l, nil)
+
+	got, ok, err := c.Lookup(l.DiffID)
+
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, l.DiffID, got.DiffID)
+	require.Equal(t, want.Path, got.Path)
+	require.Equal(t, want.Meta, got.Meta)
+}
+
+func TestLookupSaysALayerNeverConvertedIsMissing(t *testing.T) {
+	t.Parallel()
+
+	_, ok, err := opened(t).Lookup(layerOf(t, file("a", "x")).DiffID)
+
+	require.NoError(t, err)
+	require.False(t, ok, "a run must pull an image whose layers the cache lost, not attach nothing")
+}
