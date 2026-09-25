@@ -88,7 +88,7 @@ const stopUsage = `Usage: cove stop [OPTIONS] SANDBOX [SANDBOX...]
 
 Stop one or more sandboxes, given by name or ID. Prints the ID of each VM
 stopped. Only the VMs cove created are stopped: another VM of the host is
-refused and left as is. A stopped VM is removed unless run kept it (--keep).
+refused and left as is. A stopped VM is removed.
 
 Options:
   -a, --all             Stop every running sandbox of cove

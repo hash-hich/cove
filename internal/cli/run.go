@@ -9,6 +9,7 @@ import (
 
 	"gitlab.com/hich-hich/cove/internal/codebase"
 	"gitlab.com/hich-hich/cove/internal/image"
+	"gitlab.com/hich-hich/cove/internal/writedisk"
 )
 
 // SandboxSpec describes the sandbox run is asked for: the options the user may set on top of the
@@ -18,12 +19,12 @@ type SandboxSpec struct {
 	Image string
 	// Name is the VM name; empty lets the backend generate one.
 	Name string
-	// Keep leaves the stopped VM in place instead of removing it.
-	Keep bool
 	// CPUs is the number of vCPUs; zero leaves the default of the backend.
 	CPUs int
 	// Memory is the memory limit with its suffix (512M, 4G); empty leaves the default of the backend.
 	Memory string
+	// Disk is the largest the disk the VM writes on may be; the host lowers it when it lacks room.
+	Disk writedisk.Size
 	// Env holds the KEY=VALUE or bare KEY (inherited from the host) entries to pass to the VM.
 	Env []string
 	// Branch is the branch the agent starts from, recorded with the run; empty records nothing.
@@ -69,10 +70,10 @@ func runCommand(a *App, args []string) int {
 // asked for, and an error carrying the message to show on any other usage error.
 func parseRun(args []string) (RunOptions, error) {
 	var (
-		opts     RunOptions
-		rm, keep bool
-		env      envFlag
+		opts RunOptions
+		env  envFlag
 	)
+	opts.Spec.Disk = writedisk.DefaultCap
 	fs := flag.NewFlagSet("cove run", flag.ContinueOnError)
 	// flag would print the message itself; the caller prints it with the usage, once.
 	fs.SetOutput(io.Discard)
@@ -81,20 +82,22 @@ func parseRun(args []string) (RunOptions, error) {
 	fs.StringVar(&opts.Spec.Branch, "branch", "", "")
 	fs.StringVar(&opts.Spec.Name, "name", "", "")
 	fs.StringVar(&opts.Spec.Image, "image", image.DefaultImage, "")
-	fs.BoolVar(&rm, "rm", false, "")
-	fs.BoolVar(&keep, "keep", false, "")
+	// A sandbox is always removed when it stops; --rm is taken because docker users type it.
+	fs.Bool("rm", false, "")
 	fs.IntVar(&opts.Spec.CPUs, "cpus", 0, "")
 	fs.StringVar(&opts.Spec.Memory, "m", "", "")
 	fs.StringVar(&opts.Spec.Memory, "memory", "", "")
+	fs.Func("disk", "", func(v string) error {
+		var err error
+		opts.Spec.Disk, err = writedisk.ParseSize(v)
+		return err //nolint:wrapcheck // flag names the flag, ParseSize the sizes.
+	})
 	fs.Var(&env, "e", "")
 	fs.Var(&env, "env", "")
 
 	if err := fs.Parse(args); err != nil {
 		//nolint:wrapcheck // flag's messages are complete and name the flag; a prefix would only repeat them.
 		return opts, err
-	}
-	if rm && keep {
-		return opts, errors.New("--rm and --keep are mutually exclusive")
 	}
 	if opts.Spec.CPUs < 0 {
 		return opts, errors.New("--cpus must be positive")
@@ -110,7 +113,6 @@ func parseRun(args []string) (RunOptions, error) {
 		return opts, fmt.Errorf("takes no command, the sandbox only waits for instructions (got %q)", fs.Arg(1))
 	}
 	opts.URL = fs.Arg(0)
-	opts.Spec.Keep = keep
 	opts.Spec.Env = env
 	return opts, nil
 }
@@ -137,10 +139,12 @@ Options:
   -b, --branch string   Branch to start from; the default branch of the repository otherwise
       --name string     Assign a name to the VM; the backend picks one otherwise
       --image string    Image of the VM (default ` + image.DefaultImage + `)
-      --rm              Remove the VM when it stops (default)
-      --keep            Keep the stopped VM for inspection instead
+      --rm              Remove the VM when it stops, which it always is
       --cpus int        Number of CPUs
   -m, --memory string   Memory limit with a suffix, e.g. 512M or 4G
+      --disk size       Disk the VM writes on: 8g, 16g, 32g, 64g, 128g, 256g,
+                        512g or 1t (default 64g), smaller when the host has
+                        less free; a full disk fails the writes of the VM only
   -e, --env list        Set environment variables, KEY=VALUE or KEY to inherit from the host
 
 Not implemented yet: the micro-VM backend is being replaced. run validates its

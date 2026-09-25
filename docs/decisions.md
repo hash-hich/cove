@@ -654,8 +654,8 @@ session across VMs.
 **Decided.** Verbs and flags start from what docker, podman and Apple
 `container` do, market standards developers already know, and diverge only
 where isolation demands it. `run` creates the sandbox and nothing else, with
-the flags of `docker run` its role justifies (`--name`, `--rm`, `--keep`,
-`--cpus`, `-m`, `-e`) and no other: cove builds the argument array itself, so
+the flags of `docker run` its role justifies (`--name`, `--rm`, `--cpus`,
+`-m`, `-e`) and no other: cove builds the argument array itself, so
 a mount, a user, a working directory, a network option, the SSH agent or a
 command cannot even be asked for. `stop` and `list` (aliases `ls`, `ps`) act
 only on VMs carrying the label `cove=sandbox`; `--all` is a filtered loop,
