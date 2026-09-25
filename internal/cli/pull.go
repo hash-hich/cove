@@ -71,15 +71,7 @@ func pullCommand(a *App, args []string) int {
 // facts on stderr unless the output is meant for a script. It returns what was pulled, or the
 // exit code of the failure it reported on stderr.
 func pull(ctx context.Context, a *App, opts PullOptions) (image.Result, int) {
-	root, err := image.DefaultRoot()
-	if err != nil {
-		return image.Result{}, failed(ctx, a, err)
-	}
-	store, err := image.Open(root)
-	if err != nil {
-		return image.Result{}, failed(ctx, a, err)
-	}
-	rootfs, err := erofs.Open(root)
+	store, rootfs, err := openStore()
 	if err != nil {
 		return image.Result{}, failed(ctx, a, err)
 	}
@@ -87,18 +79,42 @@ func pull(ctx context.Context, a *App, opts PullOptions) (image.Result, int) {
 	if opts.Quiet || opts.JSON {
 		facts = io.Discard
 	}
+	res, err := newPuller(a, store, rootfs, facts, "cove pull: ").Pull(ctx, opts.Ref)
+	if err != nil {
+		return image.Result{}, failed(ctx, a, err)
+	}
+	return res, 0
+}
+
+// openStore opens the store of the images and the cache of their disks, under the root of the
+// cache of cove.
+func openStore() (*image.Store, *erofs.Cache, error) {
+	root, err := image.DefaultRoot()
+	if err != nil {
+		return nil, nil, err //nolint:wrapcheck // DefaultRoot names what it could not find.
+	}
+	store, err := image.Open(root)
+	if err != nil {
+		return nil, nil, err //nolint:wrapcheck // Open names the store.
+	}
+	rootfs, err := erofs.Open(root)
+	if err != nil {
+		return nil, nil, err //nolint:wrapcheck // Open names the cache.
+	}
+	return store, rootfs, nil
+}
+
+// newPuller returns a puller into store and rootfs that says what it does on facts, the warnings
+// of the registry library prefixed by prefix.
+func newPuller(a *App, store *image.Store, rootfs *erofs.Cache, facts io.Writer, prefix string) *image.Puller {
 	puller := &image.Puller{Store: store, Rootfs: rootfs, Log: facts, Terminal: terminal(a.Stderr)}
 	// The library retries a request three times on its own, a second then three of wait, and
 	// says nothing by default: a command that takes ten seconds more would look stuck. Its
 	// warnings go through the puller, which owns that stream while layers come down.
 	logs.Warn.SetOutput(puller.Warnings())
 	logs.Warn.SetFlags(0)
-	logs.Warn.SetPrefix("cove pull: ")
-	res, err := puller.Pull(ctx, opts.Ref)
-	if err != nil {
-		return image.Result{}, failed(ctx, a, err)
-	}
-	return res, 0
+	logs.Warn.SetPrefix(prefix)
+	return puller
 }
 
 // failed reports err as a failure of pull on stderr, one line, as an interruption when a signal
