@@ -6,6 +6,13 @@
 # ARCHS are the architectures of the guest, as Go names them.
 ARCHS := arm64 amd64
 
+# BUILD names the tree cove and cove-vmm are built from: its commit, what differs from it, and
+# the files git does not track yet. cove refuses a cove-vmm of another build, since the two change
+# together.
+BUILD := $(shell { git rev-parse HEAD; git diff HEAD; git ls-files -z -o --exclude-standard | \
+	xargs -0 shasum -a 256; } | shasum -a 256 | cut -c 1-16)
+BUILD_LDFLAGS := -X gitlab.com/hich-hich/cove/internal/vmmproto.build=$(BUILD)
+
 # LIBEXEC holds what cove runs a VM with, found beside the bin directory of cove.
 LIBEXEC := libexec
 
@@ -13,7 +20,7 @@ LIBEXEC := libexec
 # mounted as it is.
 MKEMPTYEXT4 := docker run --rm -v "$(CURDIR)":/cove -w /cove/tools/mkemptyext4 cove-mkemptyext4
 
-.PHONY: help cove cove-init libkrun kernel image-sandbox image-go fmt lint test check \
+.PHONY: help cove cove-init cove-vmm libkrun kernel image-sandbox image-go fmt lint test check \
 	emptyext4 emptyext4-check mkemptyext4-docker-image
 
 ## help: list the targets and what each one does
@@ -23,11 +30,24 @@ help:
 
 ## cove: build the CLI into bin/cove
 cove:
-	go build -o bin/cove ./cmd/cove
+	go build -ldflags "$(BUILD_LDFLAGS)" -o bin/cove ./cmd/cove
 
 ## libkrun: build libkrun as third_party/libkrun.lock pins it into libexec/lib, see its build.sh
 libkrun:
 	third_party/libkrun/build.sh $(LIBEXEC)/lib
+
+## cove-vmm: build the process that runs the monitor of a VM into libexec, signed to create VMs
+cove-vmm: libkrun
+	@lib=$$(ls $(LIBEXEC)/lib/libkrun.*) && \
+	sum=$$(shasum -a 256 "$$lib" | cut -d ' ' -f 1) && \
+	. third_party/libkrun.lock && \
+	case $$(uname -s) in Darwin) rpath=@loader_path/lib ;; *) rpath='$$ORIGIN/lib' ;; esac && \
+	CGO_ENABLED=1 CGO_LDFLAGS="$(CURDIR)/$$lib" go build -o $(LIBEXEC)/cove-vmm \
+		-ldflags "$(BUILD_LDFLAGS) -X main.libkrunVersion=$$LIBKRUN_TAG -X main.libkrunSHA256=$$sum \
+			-extldflags=-Wl,-rpath,$$rpath" \
+		./cmd/cove-vmm
+	@if [ "$$(uname -s)" = Darwin ]; then \
+		codesign -s - -f --entitlements cmd/cove-vmm/entitlements.plist $(LIBEXEC)/cove-vmm; fi
 
 ## cove-init: build the init of the VM, static, into bin/cove-init/<arch>/cove-init for each guest
 cove-init:

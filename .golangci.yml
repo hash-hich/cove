@@ -150,6 +150,13 @@ linters:
   # revive's exported and package-comments rules.
   exclusions:
     generated: lax
+    rules:
+      # cgo rewrites a file that imports "C" before the linters read it, and godot and gocritic
+      # then report on the lines of the rewrite, the C preamble among them, not on the source.
+      - path: (internal/krun/krun\.go|internal/confine/confine_darwin\.go)$
+        linters:
+          - godot
+          - gocritic
 
 issues:
   # Defaults truncate to 50 per linter and 3 per identical message. An
