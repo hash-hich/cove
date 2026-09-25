@@ -8,8 +8,7 @@ promised to other Go repositories.
 ## Build
 
 ```bash
-docker build --platform linux/arm64 -t cove-sandbox:local images/sandbox   # the base, first
-docker build --platform linux/arm64 -t cove-go:local images/go
+make image-go   # the base first, then the profile, as cove-go:local
 ```
 
 The tag follows the base image: local store only, no version in the tag, so

@@ -53,7 +53,7 @@ nothing to run them with: each exits 125 and creates nothing. What the binary
 carries out today is the image side, on any host:
 
 ```bash
-go build -o bin/cove ./cmd/cove
+make cove
 
 bin/cove pull ghcr.io/you/image:tag   # an image into ~/.cache/cove/images, by digest on stdout
 ```

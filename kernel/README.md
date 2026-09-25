@@ -13,11 +13,10 @@ the architecture fragments list them.
 ## Build
 
 ```bash
-docker build --platform linux/arm64 --output type=local,dest=bin/kernel/arm64 kernel
-docker build --platform linux/amd64 --output type=local,dest=bin/kernel/amd64 kernel
+make kernel
 ```
 
-Each build writes two files: `kernel`, the raw `Image` on arm64 and the ELF
+It builds for arm64 and amd64, each into `bin/kernel/<arch>`. Each build writes two files: `kernel`, the raw `Image` on arm64 and the ELF
 `vmlinux` on x86_64, stripped of its DWARF but not of its BTF, and `config`,
 the final configuration. The build runs on the platform of the host and
 cross-compiles, so either architecture builds on either host. It takes about

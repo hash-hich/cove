@@ -27,7 +27,7 @@ then it is merged as it is.
 - **Every commit must compile and pass all tests.** No "WIP" commits, no
   commits that leave the tree broken and rely on a follow-up to fix it.
 - **Every commit must be `gofumpt`-formatted and lint-clean.** Run
-  `golangci-lint fmt` then `golangci-lint run`.
+  `make fmt` then `make lint`.
 - **Separate preparatory refactorings from behavior changes.** If a fix
   or feature is easier to review after a refactor, land the refactor in
   its own commit first. This applies even when the refactor only becomes

@@ -16,16 +16,17 @@ Load only the guidance relevant to the task:
 
 ## Commands
 
+The Makefile holds every command; `make` lists its targets.
+
 ```bash
 go run ./cmd/cove <args>                # run the CLI locally (no "--": it would be passed to cove and end flag parsing)
-go build -o bin/cove ./cmd/cove         # build the binary
-go test ./...                           # all tests
+make cove                               # build the binary
+make fmt                                # format (gofumpt + gci), both modules
+make check                              # lint for the host and Linux, then test, both modules (CI gate)
 go test ./internal/<pkg> -run TestName  # single test
-golangci-lint fmt                       # format (gofumpt + gci)
-golangci-lint run                       # lint (CI gate, also reports formatting drift)
 ```
 
-Definition of done: `golangci-lint fmt` leaves no diff, `golangci-lint run && go test ./...` green, and the touched command manually exercised via `go run`.
+Definition of done: `make fmt` leaves no diff, `make check` green, and the touched command manually exercised via `go run`.
 
 ## Project layout
 <!-- Intended layout, no code yet: -->

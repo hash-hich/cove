@@ -8,11 +8,11 @@ are summarised in the image entry of
 ## Build
 
 ```bash
-docker build --platform linux/arm64 -t cove-sandbox:local images/sandbox
+make image-sandbox   # docker build --platform linux/arm64 -t cove-sandbox:local images/sandbox
 ```
 
-`podman build` takes the same arguments and produces the same image; the
-commands below are written with docker, and podman is a drop-in substitute
+`podman build` takes the same arguments as the `docker build` the Makefile
+runs, and produces the same image; the commands below are written with docker, and podman is a drop-in substitute
 throughout. The image is stored in the local image store only. No registry is
 involved for now: every host that runs cove builds the image itself from this
 directory, which is what keeps the content reproducible from the repository
