@@ -18,6 +18,32 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-25: the monitor runs in cove-vmm, handed descriptors and confined
+
+**Decided.** `cove-vmm`, one process per VM beside `cove` in `libexec`, is the
+only binary that links a monitor, through cgo, and the only one signed with
+`com.apple.security.hypervisor`. `cove` opens every file of the VM and hands
+descriptors, never paths; `cove-vmm` enters its sandbox before the monitor
+runs, and names each file by `/dev/fd/N`. On macOS the sandbox is Seatbelt,
+`(deny default)` plus what libkrun was seen to be refused; a platform without
+a confinement written runs no VM. Three messages cross a socket pair: who
+`cove-vmm` is, the VM, the answer. `cove` refuses a `cove-vmm` of another
+build, and returns once the init says the image is mounted.
+
+**Why.** A guest that escapes the monitor lands in `cove-vmm`, and must find
+there no file of the user, no network and no program to start. A descriptor
+reaches one file where a path rule reaches a directory. Measured, libkrun
+needs four rules: its descriptors, and two sysctls. The right to create VMs
+belongs to the process that runs one, not to the one that reads the user's
+files. `cove` stays pure Go and cross-compiles; `cove-vmm` is built per
+platform, on a Mac for macOS anyway. Firecracker behind its jailer will take
+the same descriptors and the same messages.
+
+**Rejected.** `cove` started again under another name: one binary carrying
+both the files of the user and the right to create VMs. Paths to the files:
+a profile that reads the store and the state of cove. Driving krunkit or
+vfkit: binaries of Podman or Homebrew, whose version moves under cove.
+
 ## 2026-09-25: libkrun is built by cove from a commit, its bytes kept out of git
 
 **Decided.** libkrun is named in `third_party/libkrun.lock` by the commit of
