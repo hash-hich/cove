@@ -17,6 +17,14 @@ import (
 // Path is where the description lies in the initramfs, and where the init reads it.
 const Path = "/cove/run.json"
 
+// ConsolePrefix opens every line the init writes on the console, so that a reader of the console
+// tells it from the kernel and from the processes of the image.
+const ConsolePrefix = "cove-init: "
+
+// Ready is the line the init writes, after ConsolePrefix, once the image is mounted and the VM is
+// habitable: what the host waits for before it says the sandbox is created.
+const Ready = "ready"
+
 // WriteLabel is the label of the ext4 file system of every write disk, set when tools/mkemptyext4
 // makes the empty ext4 it starts from, and which the init reads before it mounts the disk.
 const WriteLabel = "cove-rw"

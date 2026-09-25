@@ -22,10 +22,6 @@ import (
 // rootMount is the root of the image in the initramfs, the overlay of the layers and the upper.
 const rootMount = "/r"
 
-// consolePrefix opens every line the init writes on the console, so that a reader of the console
-// tells it from the kernel and from the processes of the image.
-const consolePrefix = "cove-init: "
-
 // maxOpenFiles is the hard limit on open files the processes of the image start with. A VM
 // without systemd starts at 4096, and dockerd and node count on the higher limit docker gave them.
 const maxOpenFiles = 1 << 20
@@ -43,7 +39,7 @@ func Main() {
 }
 
 func say(format string, args ...any) {
-	_, _ = fmt.Fprintf(os.Stdout, consolePrefix+format+"\n", args...)
+	_, _ = fmt.Fprintf(os.Stdout, spec.ConsolePrefix+format+"\n", args...)
 }
 
 // run boots the VM, then runs the command of the description when there is one, and returns
@@ -61,7 +57,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	say("ready")
+	say(spec.Ready)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, unix.SIGTERM, unix.SIGINT, unix.SIGPWR)
