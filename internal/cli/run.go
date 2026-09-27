@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -24,6 +25,7 @@ import (
 	"gitlab.com/hich-hich/cove/internal/codebase"
 	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/image"
+	"gitlab.com/hich-hich/cove/internal/inventory"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
@@ -142,7 +144,10 @@ func run(ctx context.Context, a *App, opts RunOptions) (string, error) {
 	id := hex.EncodeToString(randomBytes(32))
 	vm := cmp.Or(opts.Spec.Name, "cove-"+id[:12])
 	sb, err := sandbox.Create(ctx, root, sandbox.Request{
-		ID: id, Name: vm,
+		Record: inventory.Record{
+			ID: id, Name: vm, Image: opts.Spec.Image, Digest: digest.String(),
+			Repository: opts.URL, Branch: opts.Spec.Branch, Created: time.Now().UTC(),
+		},
 		CPUs: uint8(opts.Spec.CPUs), MemoryMiB: opts.Spec.MemoryMiB, //nolint:gosec // G115: parseRun bounds CPUs.
 		Disk: opts.Spec.Disk, Plan: plan, Remove: opts.Spec.Remove,
 		Run: spec.Run{
@@ -336,7 +341,8 @@ carry the agent is removed.
 
 Options:
   -b, --branch string   Branch to start from; the default branch of the repository otherwise
-      --name string     Assign a name to the VM; the backend picks one otherwise
+      --name string     Assign a name to the VM, unique among the sandboxes of
+                        cove, stopped ones included; cove picks one otherwise
       --image string    Image of the VM (default ` + image.DefaultImage + `)
       --rm              Remove the sandbox, its disk included, when stop stops
                         it; it is kept otherwise, to be started again

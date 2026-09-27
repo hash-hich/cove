@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gitlab.com/hich-hich/cove/internal/erofs"
+	"gitlab.com/hich-hich/cove/internal/inventory"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/vminit/initramfs"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
@@ -52,8 +53,9 @@ const bootTimeout = time.Minute
 
 // Request is the sandbox to create.
 type Request struct {
-	// ID names the sandbox and its directory, Name its VM, which the guest takes as hostname.
-	ID, Name string
+	// Record is the sandbox as the inventory records it: its ID names its directory, and its Name
+	// the VM, which the guest takes as hostname. Create fills its resources from those below.
+	Record inventory.Record
 	// CPUs and MemoryMiB are the resources of the VM.
 	CPUs      uint8
 	MemoryMiB uint32
@@ -78,30 +80,37 @@ type Sandbox struct {
 }
 
 // Create makes the sandbox of req under root, the directory of the sandboxes, with the cove-vmm,
-// kernel and init of libexec beside cove, and returns once its image is mounted. A sandbox that
-// fails is removed, its VM included, and the error carries what cove-vmm and the console said.
+// kernel and init of libexec beside cove, and returns once its image is mounted. The sandbox enters
+// the inventory first, and its cove-vmm holds its lock from then on. A sandbox that fails is
+// removed, its VM included, and the error carries what cove-vmm and the console said.
 func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err error) {
 	libexec, err := vmmlaunch.Dir()
 	if err != nil {
 		return nil, err //nolint:wrapcheck // Dir names libexec and how to get it.
 	}
-	dir := filepath.Join(root, req.ID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("create the directory of the sandbox: %w", err)
+	// The disk is sized before the sandbox enters the inventory, for its record to say the size it
+	// got.
+	size, err := diskSize(root, req.Disk)
+	if err != nil {
+		return nil, err
+	}
+	rec := req.Record
+	rec.CPUs, rec.MemoryMiB, rec.Disk = req.CPUs, req.MemoryMiB, int64(size)
+	dir, lock, err := inventory.Add(ctx, root, rec)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // Add names the sandbox or the name it carries.
 	}
 	defer func() {
 		if err != nil {
-			_ = os.RemoveAll(dir)
+			// The removal must happen whatever ended ctx, and while the lock is still held, so that
+			// no one sees a stopped sandbox that is about to go.
+			_ = inventory.Remove(context.WithoutCancel(ctx), root, req.Record.ID)
+			lock.Release()
+			return
 		}
+		// cove-vmm holds the lock from now on, and alone once cove ends.
+		lock.Close()
 	}()
-	free, err := rwdisk.Free(dir)
-	if err != nil {
-		return nil, err //nolint:wrapcheck // Free names the directory.
-	}
-	size, err := rwdisk.Nominal(req.Disk, free, rwdisk.DefaultMargin)
-	if err != nil {
-		return nil, err //nolint:wrapcheck // Nominal names the free space and the margin.
-	}
 	vmReq, err := write(libexec, dir, req, size)
 	if err != nil {
 		return nil, err
@@ -111,7 +120,7 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 	if err != nil {
 		return nil, fmt.Errorf("create the log of cove-vmm: %w", err)
 	}
-	vmReq.Log = log
+	vmReq.Log, vmReq.Lock = log, lock.File()
 	vm, err := vmmlaunch.Start(ctx, libexec, vmReq)
 	_ = log.Close()
 	if err != nil {
@@ -122,6 +131,25 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 		return nil, withConsole(err, dir)
 	}
 	return &Sandbox{Dir: dir, Console: vmReq.Console, WriteDisk: size, VM: vm}, nil
+}
+
+// diskSize returns the size of the write disk of a sandbox of root, the largest up to capacity that
+// the free space of root holds: the directory of the sandbox will be on its file system.
+func diskSize(root string, capacity rwdisk.Size) (rwdisk.Size, error) {
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return 0, fmt.Errorf("create the directory of the sandboxes: %w", err)
+	}
+	free, err := rwdisk.Free(root)
+	if err != nil {
+		return 0, err //nolint:wrapcheck // Free names the directory.
+	}
+	//nolint:wrapcheck // Nominal names the free space and the margin.
+	return rwdisk.Nominal(capacity, free, rwdisk.DefaultMargin)
+}
+
+// WriteDisk returns the path of the write disk of the sandbox in dir.
+func WriteDisk(dir string) string {
+	return filepath.Join(dir, writeDiskFile)
 }
 
 // write writes the files of the sandbox in dir, and returns the VM that boots from them.
@@ -139,7 +167,7 @@ func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Reques
 	for _, l := range req.Plan.Layers {
 		vm.Disks = append(vm.Disks, vmmproto.Disk{Path: l.Path, ReadOnly: true})
 	}
-	disk := filepath.Join(dir, writeDiskFile)
+	disk := WriteDisk(dir)
 	if err := rwdisk.Create(disk, size); err != nil {
 		return vm, err //nolint:wrapcheck // Create names the disk.
 	}
@@ -162,7 +190,7 @@ func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Reques
 // their files, and the write disk.
 func describe(req Request, size rwdisk.Size) (*spec.Run, error) {
 	run := req.Run
-	run.Hostname = req.Name
+	run.Hostname = req.Record.Name
 	run.MountOptions = slices.Clone(req.Plan.MountOptions)
 	run.Layers = make([]spec.Layer, len(req.Plan.Layers))
 	for i, l := range req.Plan.Layers {

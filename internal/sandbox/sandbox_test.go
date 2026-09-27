@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/hich-hich/cove/internal/erofs"
+	"gitlab.com/hich-hich/cove/internal/inventory"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
@@ -33,7 +34,7 @@ func TestDescribeSizesEachLayerByItsFile(t *testing.T) {
 		return dir + "/" + name
 	}
 	req := sandbox.Request{
-		Name: "demo",
+		Record: inventory.Record{Name: "demo"},
 		Plan: erofs.Plan{
 			MountOptions: []string{"xino=on"},
 			Layers: []erofs.Mount{
