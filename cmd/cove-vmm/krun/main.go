@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"gitlab.com/hich-hich/cove/cmd/cove-vmm/internal/confine"
@@ -95,8 +96,11 @@ func librarySHA256() (string, error) {
 
 // configure enters the sandbox, confined to the files of vm, then gives libkrun vm.
 func configure(vm vmmproto.VM) (*libkrun.Ctx, error) {
+	if err := enterSocketDir(vm.Vsock); err != nil {
+		return nil, err
+	}
 	files := vm.Files()
-	if err := confine.Enter(files.Read, files.Write); err != nil {
+	if err := confine.Enter(files.Read, files.Write, files.Listen); err != nil {
 		return nil, err //nolint:wrapcheck // Enter names the sandbox.
 	}
 	format := libkrun.FormatRaw
@@ -119,15 +123,53 @@ func configure(vm vmmproto.VM) (*libkrun.Ctx, error) {
 	return ctx, nil
 }
 
-// attach gives libkrun the devices of vm: its disks and its console.
+// attach gives libkrun the devices of vm: its disks, its console and its vsock.
 func attach(ctx *libkrun.Ctx, vm vmmproto.VM) error {
 	for i, d := range vm.Disks {
 		if err := ctx.AddDisk("d"+strconv.Itoa(i), d.Path, d.ReadOnly); err != nil {
 			return err //nolint:wrapcheck // The binding names libkrun and the disk.
 		}
 	}
-	//nolint:wrapcheck // The binding names libkrun and the call.
-	return ctx.SetConsoleOutput(vm.Console)
+	if err := ctx.SetConsoleOutput(vm.Console); err != nil {
+		return err //nolint:wrapcheck // The binding names libkrun and the call.
+	}
+	return addVsock(ctx, vm.Vsock)
+}
+
+// enterSocketDir makes the directory of the sockets of ports the working directory. A Unix socket
+// is bound by a path of 104 bytes at most on macOS, and the directory of a sandbox is longer: the
+// sockets are bound by their names, relative to it. The sandbox still matches their whole paths.
+func enterSocketDir(ports []vmmproto.VsockPort) error {
+	if len(ports) == 0 {
+		return nil
+	}
+	dir := filepath.Dir(ports[0].Socket)
+	for _, p := range ports[1:] {
+		if filepath.Dir(p.Socket) != dir {
+			return fmt.Errorf("the sockets of the VM are in %s and %s, not in one directory", dir, filepath.Dir(p.Socket))
+		}
+	}
+	if err := os.Chdir(dir); err != nil {
+		return fmt.Errorf("enter the directory of the sockets: %w", err)
+	}
+	return nil
+}
+
+// addVsock attaches the vsock device and a listener for each of ports, by the name of its socket
+// in the working directory.
+func addVsock(ctx *libkrun.Ctx, ports []vmmproto.VsockPort) error {
+	if len(ports) == 0 {
+		return nil
+	}
+	if err := ctx.AddVsock(); err != nil {
+		return err //nolint:wrapcheck // The binding names libkrun and the call.
+	}
+	for _, p := range ports {
+		if err := ctx.AddVsockListener(p.Port, filepath.Base(p.Socket)); err != nil {
+			return err //nolint:wrapcheck // The binding names libkrun and the port.
+		}
+	}
+	return nil
 }
 
 // answer sends cove the Status of err, and returns err, or the failure to send it.

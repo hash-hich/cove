@@ -17,6 +17,8 @@ int32_t krun_add_disk3(uint32_t ctx_id, const char *block_id, const char *disk_p
 	uint32_t disk_format, bool read_only, bool direct_io, uint32_t sync_mode);
 int32_t krun_set_console_output(uint32_t ctx_id, const char *c_filepath);
 int32_t krun_disable_implicit_vsock(uint32_t ctx_id);
+int32_t krun_add_vsock(uint32_t ctx_id, uint32_t tsi_features);
+int32_t krun_add_vsock_port2(uint32_t ctx_id, uint32_t port, const char *c_filepath, bool listen);
 int32_t krun_start_enter(uint32_t ctx_id);
 
 // libkrun_path returns the file the dynamic linker loaded libkrun from, NULL when it cannot tell.
@@ -33,6 +35,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"syscall"
 	"unsafe"
 )
@@ -57,8 +60,8 @@ type Ctx struct {
 	id C.uint32_t
 }
 
-// New creates the configuration of a VM, without the vsock device libkrun adds by default: the
-// channel of the turns is not libkrun's, and TSI is never enabled.
+// New creates the configuration of a VM, without the vsock device libkrun adds by default, which
+// enables TSI: AddVsock adds one without it.
 func New() (*Ctx, error) {
 	id := C.krun_create_ctx()
 	if id < 0 {
@@ -91,6 +94,22 @@ func (c *Ctx) AddDisk(id, path string, readOnly bool) error {
 	defer free(cid, cp)
 	return check("attach disk "+id, C.krun_add_disk3(c.id, cid, cp, diskFormatRaw, C.bool(readOnly), false,
 		syncModeRelaxed))
+}
+
+// AddVsock attaches the vsock device, with none of the TSI features that would carry the sockets
+// of the guest to the host. It is called once, before the ports.
+func (c *Ctx) AddVsock() error {
+	return check("attach the vsock", C.krun_add_vsock(c.id, 0))
+}
+
+// AddVsockListener has libkrun listen on the Unix socket at path, when the VM starts, and carry
+// each connection it accepts to port of the guest. Nothing may be at path: libkrun refuses it.
+// A socket that cannot be created is only logged by libkrun, since it happens once the VM runs.
+func (c *Ctx) AddVsockListener(port uint32, path string) error {
+	cp := C.CString(path)
+	defer free(cp)
+	return check("listen for vsock port "+strconv.FormatUint(uint64(port), 10),
+		C.krun_add_vsock_port2(c.id, C.uint32_t(port), cp, true))
 }
 
 // SetConsoleOutput writes what the guest writes on its console into the file at path.

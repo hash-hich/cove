@@ -3,6 +3,7 @@
 package confine_test
 
 import (
+	"bufio"
 	"context"
 	"net"
 	"os"
@@ -39,7 +40,10 @@ func TestMain(m *testing.M) {
 
 // child enters the sandbox, then does what, and exits 0 when it succeeded, 1 when it was refused.
 func child(what string) int {
-	if err := confine.Enter([]string{os.Getenv(readVar)}, []string{os.Getenv(writeVar)}); err != nil {
+	if what == listenOther || what == listenGiven {
+		return listenChild(what)
+	}
+	if err := confine.Enter([]string{os.Getenv(readVar)}, []string{os.Getenv(writeVar)}, nil); err != nil {
 		return 2
 	}
 	if !attempts[what]() {
@@ -121,6 +125,96 @@ var attempts = map[string]func() bool{
 	"exec": func() bool {
 		return exec.CommandContext(context.Background(), "/usr/bin/true").Run() == nil
 	},
+}
+
+// The attempts of a child given a socket to listen on: on that one, and on another of its directory.
+const (
+	listenGiven = "listen-given"
+	listenOther = "listen-other"
+)
+
+// socketVar names to the child the socket it may listen on.
+const socketVar = "COVE_CONFINE_SOCKET"
+
+// listenChild enters the sandbox from the directory of the socket it was given, as cove-vmm does,
+// then listens on that socket or on another one by a path relative to it, says so on stdout, and
+// accepts one connection.
+func listenChild(what string) int {
+	socket := os.Getenv(socketVar)
+	if err := os.Chdir(filepath.Dir(socket)); err != nil {
+		return 2
+	}
+	if err := confine.Enter(nil, nil, []string{socket}); err != nil {
+		return 2
+	}
+	name := filepath.Base(socket)
+	if what == listenOther {
+		name = "other.sock"
+	}
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "unix", name)
+	if err != nil {
+		return 1
+	}
+	_, _ = os.Stdout.WriteString("listening\n")
+	c, err := ln.Accept()
+	if err != nil {
+		return 1
+	}
+	_ = c.Close()
+	return 0
+}
+
+func TestEnterListen(t *testing.T) {
+	t.Parallel()
+
+	for what, allowed := range map[string]bool{listenGiven: true, listenOther: false} {
+		t.Run(what, func(t *testing.T) {
+			t.Parallel()
+
+			// A Unix socket takes a path of 104 bytes at most, which a temporary directory of the test
+			// can pass: the child listens by a path relative to it, as cove-vmm does.
+			dir, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			socket := filepath.Join(dir, "control.sock")
+
+			//nolint:gosec // G204, G702: the test binary itself, run again as the child.
+			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
+			cmd.Env = append(os.Environ(), childVar+"="+what, socketVar+"="+socket)
+			out, err := cmd.StdoutPipe()
+			require.NoError(t, err)
+			require.NoError(t, cmd.Start())
+			line, _ := bufio.NewReader(out).ReadString('\n')
+			if line == "listening\n" {
+				dialIn(t, dir, filepath.Base(socket))
+			}
+			err = cmd.Wait()
+
+			if allowed {
+				require.NoError(t, err)
+				return
+			}
+			exit, ok := err.(*exec.ExitError) //nolint:errorlint // Wait returns *ExitError itself.
+			require.True(t, ok, "%v", err)
+			require.Equal(t, 1, exit.ExitCode())
+		})
+	}
+}
+
+// dialIn connects to the socket name of dir, through a link in a directory whose path is short
+// enough for a Unix socket.
+func dialIn(t *testing.T, dir, name string) {
+	t.Helper()
+	//nolint:usetesting // The temporary directory of the test is what makes the path too long.
+	short, err := os.MkdirTemp("/tmp", "cc")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
+	link := filepath.Join(short, "d")
+	require.NoError(t, os.Symlink(dir, link))
+	var d net.Dialer
+	c, err := d.DialContext(t.Context(), "unix", filepath.Join(link, name))
+	require.NoError(t, err)
+	_ = c.Close()
 }
 
 func TestEnter(t *testing.T) {

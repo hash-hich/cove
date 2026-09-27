@@ -9,6 +9,6 @@ import (
 
 // Enter refuses: no confinement is written for this platform yet, and a monitor is never run
 // without one.
-func Enter(_, _ []string) error {
+func Enter(_, _, _ []string) error {
 	return errors.New("cove-vmm has no confinement on " + runtime.GOOS + " yet, and runs no VM without one")
 }

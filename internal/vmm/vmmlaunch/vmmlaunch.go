@@ -60,6 +60,9 @@ type Request struct {
 	Disks []vmmproto.Disk
 	// Console receives the console of the guest.
 	Console string
+	// Vsock are the ports of the guest the host connects to, each through a Unix socket that must
+	// not exist yet, in one directory.
+	Vsock []vmmproto.VsockPort
 	// Log receives what cove-vmm itself says, on its standard output and error. It is a file of its
 	// own: the monitor empties the console as it opens it, and would write over it.
 	Log *os.File
@@ -171,6 +174,11 @@ func bootOf(req Request) (vmmproto.Boot, error) {
 	}}
 	for _, d := range req.Disks {
 		boot.VM.Disks = append(boot.VM.Disks, vmmproto.Disk{Path: resolve(d.Path), ReadOnly: d.ReadOnly})
+	}
+	// A socket is created by the monitor, so its directory is what is resolved.
+	for _, v := range req.Vsock {
+		socket := filepath.Join(resolve(filepath.Dir(v.Socket)), filepath.Base(v.Socket))
+		boot.VM.Vsock = append(boot.VM.Vsock, vmmproto.VsockPort{Port: v.Port, Socket: socket})
 	}
 	return boot, err
 }

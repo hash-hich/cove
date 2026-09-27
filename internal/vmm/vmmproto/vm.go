@@ -16,12 +16,24 @@ type VM struct {
 	Disks []Disk `json:"disks"`
 	// Console receives what the guest writes on its console.
 	Console string `json:"console"`
+	// Vsock are the ports of the guest the host connects to, each through a Unix socket the
+	// monitor creates and listens on. The sockets share one directory.
+	Vsock []VsockPort `json:"vsock,omitempty"`
+}
+
+// VsockPort is a port of the guest reached from the host through a Unix socket.
+type VsockPort struct {
+	// Port is the vsock port the guest listens on.
+	Port uint32 `json:"port"`
+	// Socket is the path of the Unix socket; nothing may be there when the VM starts.
+	Socket string `json:"socket"`
 }
 
 // Files are the files a cove-vmm confines its monitor to.
 type Files struct {
-	// Read are the files the monitor reads, Write those it writes as well.
-	Read, Write []string
+	// Read are the files the monitor reads, Write those it writes as well, Listen the Unix
+	// sockets it creates and accepts connections on.
+	Read, Write, Listen []string
 }
 
 // Files returns the files of vm.
@@ -35,6 +47,9 @@ func (vm VM) Files() Files {
 		}
 	}
 	f.Write = append(f.Write, vm.Console)
+	for _, v := range vm.Vsock {
+		f.Listen = append(f.Listen, v.Socket)
+	}
 	return f
 }
 

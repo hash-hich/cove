@@ -6,7 +6,8 @@
 
 ; The files of the VM are allowed after these rules, each by its exact path, as Enter writes
 ; them: reading for the kernel, the initramfs and the layers, writing as well for the write disk
-; and the console. Nothing else is: not their directory, not another file of it, not a link.
+; and the console, binding for the sockets the host reaches the guest by. Nothing else is: not
+; their directory, not another file of it, not a link.
 
 ; Hypervisor.framework asks whether it runs in a VM itself, and libkrun sizes the memory of the
 ; guest in pages of the host.

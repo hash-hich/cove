@@ -43,3 +43,20 @@ func TestBootOfRefusesAFileThatDoesNotExist(t *testing.T) {
 
 	require.ErrorContains(t, err, "resolve a file of the VM", "the monitor creates no file")
 }
+
+func TestBootOfResolvesTheDirectoryOfASocket(t *testing.T) {
+	t.Parallel()
+
+	resolved, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	link := t.TempDir() + "/link"
+	require.NoError(t, os.Symlink(resolved, link))
+
+	boot, err := vmmlaunch.BootOf(vmmlaunch.Request{
+		Vsock: []vmmproto.VsockPort{{Port: 1024, Socket: link + "/control.sock"}},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, []vmmproto.VsockPort{{Port: 1024, Socket: resolved + "/control.sock"}}, boot.VM.Vsock,
+		"the socket does not exist yet, and its directory has no link left")
+}
