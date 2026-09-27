@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"gitlab.com/hich-hich/cove/internal/erofs"
+	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
-	"gitlab.com/hich-hich/cove/internal/writedisk"
 )
 
 func TestTailKeepsTheLastLinesAndNothingATerminalWouldActOn(t *testing.T) {
@@ -44,7 +44,7 @@ func TestDescribeSizesEachLayerByItsFile(t *testing.T) {
 		Run: spec.Run{User: "agent", Project: "repo", Agent: "claude"},
 	}
 
-	got, err := sandbox.Describe(req, writedisk.Sizes[0])
+	got, err := sandbox.Describe(req, rwdisk.Sizes[0])
 
 	require.NoError(t, err)
 	require.Equal(t, &spec.Run{
@@ -53,7 +53,7 @@ func TestDescribeSizesEachLayerByItsFile(t *testing.T) {
 			{Disk: spec.Disk{Size: 3}, DiffID: "sha256:top", Mountpoint: "/l/00"},
 			{Disk: spec.Disk{Size: 5}, DiffID: "sha256:base", Mountpoint: "/l/01"},
 		},
-		Write: spec.Disk{Size: int64(writedisk.Sizes[0])},
+		Write: spec.Disk{Size: int64(rwdisk.Sizes[0])},
 		User:  "agent", Project: "repo", Agent: "claude",
 	}, got)
 }

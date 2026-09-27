@@ -19,11 +19,11 @@ import (
 
 	"gitlab.com/hich-hich/cove/internal/emptyext4"
 	"gitlab.com/hich-hich/cove/internal/erofs"
+	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/vminit/initramfs"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmlaunch"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmproto"
-	"gitlab.com/hich-hich/cove/internal/writedisk"
 )
 
 // The files of libexec a VM boots from, beside cove-vmm.
@@ -59,7 +59,7 @@ type Request struct {
 	CPUs      uint8
 	MemoryMiB uint32
 	// Disk is the largest the write disk may be; the free space of the host lowers it.
-	Disk writedisk.Size
+	Disk rwdisk.Size
 	// Plan is the layers of the image, the highest first.
 	Plan erofs.Plan
 	// Run is the description of the run, the disks aside, which Create fills from Plan and Disk.
@@ -73,7 +73,7 @@ type Sandbox struct {
 	// Dir is the directory of the sandbox, Console the file its console is written to.
 	Dir, Console string
 	// WriteDisk is the size the write disk was given.
-	WriteDisk writedisk.Size
+	WriteDisk rwdisk.Size
 	// VM is the cove-vmm that runs it.
 	VM *vmmlaunch.VM
 }
@@ -95,11 +95,11 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 			_ = os.RemoveAll(dir)
 		}
 	}()
-	free, err := writedisk.Free(dir)
+	free, err := rwdisk.Free(dir)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // Free names the directory.
 	}
-	size, err := writedisk.Nominal(req.Disk, free, writedisk.DefaultMargin)
+	size, err := rwdisk.Nominal(req.Disk, free, rwdisk.DefaultMargin)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // Nominal names the free space and the margin.
 	}
@@ -126,7 +126,7 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 }
 
 // write writes the files of the sandbox in dir, and returns the VM that boots from them.
-func write(libexec, dir string, req Request, size writedisk.Size) (vmmlaunch.Request, error) {
+func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Request, error) {
 	vm := vmmlaunch.Request{
 		CPUs: req.CPUs, MemoryMiB: req.MemoryMiB, Cmdline: cmdline,
 		Kernel: filepath.Join(libexec, kernelFile), KernelFormat: kernelFormat(),
@@ -161,7 +161,7 @@ func write(libexec, dir string, req Request, size writedisk.Size) (vmmlaunch.Req
 
 // describe returns the description of the run with its disks: the layers of the plan, sized by
 // their files, and the write disk.
-func describe(req Request, size writedisk.Size) (*spec.Run, error) {
+func describe(req Request, size rwdisk.Size) (*spec.Run, error) {
 	run := req.Run
 	run.Hostname = req.Name
 	run.MountOptions = slices.Clone(req.Plan.MountOptions)

@@ -24,9 +24,9 @@ import (
 	"gitlab.com/hich-hich/cove/internal/codebase"
 	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/image"
+	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
-	"gitlab.com/hich-hich/cove/internal/writedisk"
 )
 
 // SandboxSpec describes the sandbox run is asked for: the options the user may set on top of the
@@ -41,7 +41,7 @@ type SandboxSpec struct {
 	// MemoryMiB is the memory of the VM in MiB.
 	MemoryMiB uint32
 	// Disk is the largest the disk the VM writes on may be; the host lowers it when it lacks room.
-	Disk writedisk.Size
+	Disk rwdisk.Size
 	// Env holds the KEY=VALUE or bare KEY (inherited from the host) entries to pass to the VM.
 	Env []string
 	// Branch is the branch the agent starts from, recorded with the run; empty records nothing.
@@ -260,7 +260,7 @@ func parseRun(args []string) (RunOptions, error) {
 		opts RunOptions
 		env  envFlag
 	)
-	opts.Spec.Disk = writedisk.DefaultCap
+	opts.Spec.Disk = rwdisk.DefaultCap
 	opts.Spec.CPUs, opts.Spec.MemoryMiB = defaultCPUs, defaultMemoryMiB
 	fs := flag.NewFlagSet("cove run", flag.ContinueOnError)
 	// flag would print the message itself; the caller prints it with the usage, once.
@@ -281,7 +281,7 @@ func parseRun(args []string) (RunOptions, error) {
 	fs.Func("memory", "", memory)
 	fs.Func("disk", "", func(v string) error {
 		var err error
-		opts.Spec.Disk, err = writedisk.ParseSize(v)
+		opts.Spec.Disk, err = rwdisk.ParseSize(v)
 		return err //nolint:wrapcheck // flag names the flag, ParseSize the sizes.
 	})
 	fs.Var(&env, "e", "")

@@ -6,7 +6,7 @@
 // a few megabytes, whatever the size, where the file system itself is up to a terabyte. It runs
 // in the image of the Dockerfile next to it, where e2fsprogs is pinned, and refuses another
 // version of mke2fs, which would make other bytes. It shares no code with cove: the format below
-// is the contract, and cove reads it in internal/writedisk.
+// is the contract, and cove reads it in internal/rwdisk.
 //
 // Format: a gzip stream of the magic, the size as a big endian uint64, then one record per run of
 // blocks that are not zero, in increasing order of offset, each its offset as a big endian uint64,

@@ -10,7 +10,7 @@ import (
 	"gitlab.com/hich-hich/cove/internal/agent"
 	"gitlab.com/hich-hich/cove/internal/cli"
 	"gitlab.com/hich-hich/cove/internal/image"
-	"gitlab.com/hich-hich/cove/internal/writedisk"
+	"gitlab.com/hich-hich/cove/internal/rwdisk"
 )
 
 const (
@@ -202,7 +202,7 @@ func TestParseRun(t *testing.T) {
 	t.Parallel()
 
 	// base is what run parses when no flag is given: the default image and nothing else.
-	base := cli.SandboxSpec{Image: image.DefaultImage, CPUs: 2, MemoryMiB: 2048, Disk: writedisk.DefaultCap}
+	base := cli.SandboxSpec{Image: image.DefaultImage, CPUs: 2, MemoryMiB: 2048, Disk: rwdisk.DefaultCap}
 	removed := base
 	removed.Remove = true
 	tests := []struct {
@@ -231,7 +231,7 @@ func TestParseRun(t *testing.T) {
 			args: []string{"--branch=fix", "--image=" + goImage, "--memory=512m", "--disk=64G", "--env=BAR=baz", repo},
 			want: cli.RunOptions{
 				Spec: cli.SandboxSpec{
-					Image: goImage, CPUs: 2, MemoryMiB: 512, Disk: writedisk.DefaultCap, Env: []string{"BAR=baz"},
+					Image: goImage, CPUs: 2, MemoryMiB: 512, Disk: rwdisk.DefaultCap, Env: []string{"BAR=baz"},
 					Branch: fix,
 				},
 				URL: repo,
