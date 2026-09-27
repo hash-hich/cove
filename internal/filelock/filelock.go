@@ -1,7 +1,7 @@
 // Package filelock takes the locks of the system cove uses to keep two of its processes off one
-// piece of its cache. A lock lives on a file at a path they compute alone, without knowing of
-// each other, and the kernel releases it when its holder dies, kill -9 included, so no lock left
-// behind ever blocks the next run.
+// piece of its state, and to tell whether a process it started still lives. A lock lives on a file
+// at a path they compute alone, without knowing of each other, and the kernel releases it when its
+// holder dies, kill -9 included, so no lock left behind ever blocks the next run.
 package filelock
 
 import (
@@ -67,9 +67,42 @@ func Take(ctx context.Context, path string, onWait func()) (*Lock, error) {
 	}
 }
 
-// Release releases the lock. The file stays: a lock file removed between the look of a sweep and
-// the flock of another process would let a third recreate the name and lock another inode, and
-// the two would then hold what they each believe is one lock.
+// Held reports whether a process holds the lock at path, without taking it for longer than the
+// look and without creating the file: a missing file is a lock nobody holds.
+func Held(path string) (bool, error) {
+	//nolint:gosec // G304: path is built by its caller from a root of cove, never from user input.
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("open the lock: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+	if errors.Is(err, syscall.EWOULDBLOCK) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("lock %s: %w", path, err)
+	}
+	return false, nil
+}
+
+// File returns the file the lock is held on. A lock of flock belongs to the open file and not to
+// a process, so a child that inherits the file holds the lock with its taker, and alone once the
+// taker has closed its own with Close.
+func (l *Lock) File() *os.File { return l.f }
+
+// Close closes the file of the lock without releasing it: the lock stays with whatever process
+// inherited the file, until the last of them ends.
+func (l *Lock) Close() {
+	_ = l.f.Close()
+}
+
+// Release releases the lock, for every process that shares its file. The file stays: a lock file
+// removed between the look of a sweep and the flock of another process would let a third recreate
+// the name and lock another inode, and the two would then hold what they each believe is one lock.
 func (l *Lock) Release() {
 	_ = syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
 	_ = l.f.Close()

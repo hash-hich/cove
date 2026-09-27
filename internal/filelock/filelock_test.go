@@ -168,3 +168,76 @@ func TestHolderOfALockThatIsKilled(t *testing.T) {
 	_, _ = fmt.Println(holderReady)
 	time.Sleep(time.Minute)
 }
+
+func TestHeldLooksWithoutTakingOrCreating(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "vm.lock")
+
+	held, err := filelock.Held(path)
+	require.NoError(t, err)
+	require.False(t, held, "nobody holds a lock that has no file")
+	require.NoFileExists(t, path, "a look must not create what a removal is about to take away")
+
+	l, ok, err := filelock.Try(path)
+	require.NoError(t, err)
+	require.True(t, ok)
+	held, err = filelock.Held(path)
+	require.NoError(t, err)
+	require.True(t, held)
+
+	l.Release()
+	held, err = filelock.Held(path)
+	require.NoError(t, err)
+	require.False(t, held)
+	// The look took the lock for an instant and gave it back.
+	again, ok, err := filelock.Try(path)
+	require.NoError(t, err)
+	require.True(t, ok)
+	again.Release()
+}
+
+func TestLockHandedToAChildLivesAsLongAsTheChild(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "vm.lock")
+	l, ok, err := filelock.Try(path)
+	require.NoError(t, err)
+	require.True(t, ok)
+	// The child is this test binary run again on the test below, which only waits: it holds the
+	// lock by the file it inherits, as cove-vmm does, and knows nothing of it.
+	//nolint:gosec // G204: the program is the test binary itself and the arguments are fixed.
+	child := exec.CommandContext(t.Context(), os.Args[0],
+		"-test.run=TestInheritorOfALock", "-test.timeout=1m")
+	child.Env = append(os.Environ(), inheritorEnv+"=1")
+	child.ExtraFiles = []*os.File{l.File()}
+	require.NoError(t, child.Start())
+	t.Cleanup(func() { _ = child.Process.Kill() })
+
+	l.Close()
+
+	held, err := filelock.Held(path)
+	require.NoError(t, err)
+	require.True(t, held, "the lock went with the file its taker closed, not with the child")
+
+	require.NoError(t, child.Process.Kill())
+	_ = child.Wait()
+
+	held, err = filelock.Held(path)
+	require.NoError(t, err)
+	require.False(t, held, "a killed child left the lock taken")
+}
+
+// inheritorEnv tells TestInheritorOfALock that the test above started it.
+const inheritorEnv = "COVE_TEST_INHERIT"
+
+// TestInheritorOfALock is the process the test above starts and kills, not a test of its own: it
+// waits, holding what it inherited. It does nothing in a plain run of the suite.
+func TestInheritorOfALock(t *testing.T) {
+	t.Parallel()
+
+	if os.Getenv(inheritorEnv) == "" {
+		t.Skip("this process was not started by TestLockHandedToAChildLivesAsLongAsTheChild")
+	}
+	time.Sleep(time.Minute)
+}
