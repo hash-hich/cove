@@ -22,8 +22,11 @@ const (
 	listUsage = "Usage: cove list"
 	// longForms names the case where every flag is given in its long form.
 	longForms = "long forms"
-	// table is the default output format of list.
-	table = "table"
+	// table is the default output format of list, jsonFormat the other.
+	table      = "table"
+	jsonFormat = "json"
+	// jsonFlag asks pull and list for their json output.
+	jsonFlag = "--json"
 	// review is the display name the send tests give a thread.
 	review = "review"
 	// repo and fix are the repository and the branch the run tests name.
@@ -112,6 +115,8 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "list unknown format", args: listArgs("--format", "yaml"), wantStderr: "must be table or json"},
 		{name: "list docker filter", args: listArgs("--filter", "label=cove"), wantStderr: "not defined: -filter"},
 		{name: "list target", args: listArgs(demo), wantStderr: "takes no argument"},
+		{name: "list docker all", args: listArgs("-a"), wantStderr: "not defined: -a"},
+		{name: "list two formats", args: listArgs(jsonFlag, "--format", table), wantStderr: "two formats"},
 		{name: "send no target", args: sendArgs(), wantStderr: "requires at least 1 argument"},
 		{name: "send two prompts", args: sendArgs(demo, "a", "b"), wantStderr: "takes one prompt"},
 		{name: "send empty prompt", args: sendArgs(demo, ""), wantStderr: "the prompt is empty"},
@@ -351,14 +356,19 @@ func TestParseList(t *testing.T) {
 		want cli.ListOptions
 	}{
 		{name: "no flags", args: nil, want: cli.ListOptions{Format: table}},
-		{name: "all", args: []string{"-a"}, want: cli.ListOptions{All: true, Format: table}},
 		{name: "quiet", args: []string{"-q"}, want: cli.ListOptions{Quiet: true, Format: table}},
 		{
 			name: longForms,
-			args: []string{"--all", "--quiet", "--format=json"},
-			want: cli.ListOptions{All: true, Quiet: true, Format: "json"},
+			args: []string{"--quiet", "--format=json"},
+			want: cli.ListOptions{Quiet: true, Format: jsonFormat},
 		},
 		{name: "table is explicit too", args: []string{"--format", table}, want: cli.ListOptions{Format: table}},
+		{name: "json alias", args: []string{jsonFlag}, want: cli.ListOptions{Format: jsonFormat}},
+		{
+			name: "json alias agrees with format",
+			args: []string{"--format", jsonFormat, jsonFlag},
+			want: cli.ListOptions{Format: jsonFormat},
+		},
 	}
 
 	for _, tt := range tests {
@@ -384,9 +394,6 @@ func TestVerbsWithoutABackend(t *testing.T) {
 		{name: "send driven", args: sendArgs(demo, "fix the ci")},
 		{name: "stop one target", args: stopArgs(demo)},
 		{name: "stop all", args: stopArgs("--all")},
-		{name: "list what runs", args: listArgs()},
-		{name: "ls alias", args: []string{"ls"}},
-		{name: "ps alias", args: []string{"ps"}},
 	}
 
 	for _, tt := range tests {
@@ -422,10 +429,10 @@ func TestParsePull(t *testing.T) {
 		{name: "tag left out", args: []string{"ghcr.io/org/repo"}, wantRef: "ghcr.io/org/repo:latest"},
 		{name: "by digest", args: []string{digest}, wantRef: digest},
 		{name: "quiet", args: []string{"-q", remote}, wantRef: remote, want: cli.PullOptions{Quiet: true}},
-		{name: "json", args: []string{"--json", remote}, wantRef: remote, want: cli.PullOptions{JSON: true}},
+		{name: "json", args: []string{jsonFlag, remote}, wantRef: remote, want: cli.PullOptions{JSON: true}},
 		{
 			name:    longForms,
-			args:    []string{"--quiet", "--json", remote},
+			args:    []string{"--quiet", jsonFlag, remote},
 			wantRef: remote,
 			want:    cli.PullOptions{Quiet: true, JSON: true},
 		},
@@ -454,7 +461,7 @@ func TestPullFailsWhenTheRegistryCannotBeReached(t *testing.T) {
 	// A pull that never reached the registry says the reason and nothing else: the line that
 	// opens a pull waits for the manifest, which never came.
 	for _, args := range [][]string{
-		pullArgs(unreachable), pullArgs("--json", unreachable), pullArgs("-q", unreachable),
+		pullArgs(unreachable), pullArgs(jsonFlag, unreachable), pullArgs("-q", unreachable),
 	} {
 		var stdout, stderr bytes.Buffer
 		app := &cli.App{Stdout: &stdout, Stderr: &stderr}

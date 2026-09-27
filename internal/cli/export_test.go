@@ -20,3 +20,15 @@ var ProjectOf = projectOf
 
 // Environ exposes environ to the tests of the package.
 var Environ = environ
+
+// PrintList exposes printList to the tests of the package.
+var PrintList = printList
+
+// HumanDuration exposes humanDuration to the tests of the package.
+var HumanDuration = humanDuration
+
+// Warnings exposes warnings to the tests of the package.
+var Warnings = warnings
+
+// RepositoryColumn exposes repositoryColumn to the tests of the package.
+var RepositoryColumn = repositoryColumn
