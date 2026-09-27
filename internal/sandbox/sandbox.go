@@ -53,9 +53,9 @@ const bootTimeout = time.Minute
 
 // Request is the sandbox to create.
 type Request struct {
-	// Record is the sandbox as the inventory records it: its ID names its directory, and its Name
+	// Description is the sandbox as the inventory describes it: its ID names its directory, and its Name
 	// the VM, which the guest takes as hostname. Create fills its resources from those below.
-	Record inventory.Record
+	Description inventory.Description
 	// CPUs and MemoryMiB are the resources of the VM.
 	CPUs      uint8
 	MemoryMiB uint32
@@ -88,15 +88,15 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 	if err != nil {
 		return nil, err //nolint:wrapcheck // Dir names libexec and how to get it.
 	}
-	// The disk is sized before the sandbox enters the inventory, for its record to say the size it
+	// The disk is sized before the sandbox enters the inventory, for its description to say the size it
 	// got.
 	size, err := diskSize(root, req.Disk)
 	if err != nil {
 		return nil, err
 	}
-	rec := req.Record
-	rec.CPUs, rec.MemoryMiB, rec.Disk = req.CPUs, req.MemoryMiB, int64(size)
-	dir, lock, err := inventory.Add(ctx, root, rec)
+	desc := req.Description
+	desc.CPUs, desc.MemoryMiB, desc.Disk = req.CPUs, req.MemoryMiB, int64(size)
+	dir, lock, err := inventory.Add(ctx, root, desc)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // Add names the sandbox or the name it carries.
 	}
@@ -104,7 +104,7 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 		if err != nil {
 			// The removal must happen whatever ended ctx, and while the lock is still held, so that
 			// no one sees a stopped sandbox that is about to go.
-			_ = inventory.Remove(context.WithoutCancel(ctx), root, req.Record.ID)
+			_ = inventory.Remove(context.WithoutCancel(ctx), root, req.Description.ID)
 			lock.Release()
 			return
 		}
@@ -190,7 +190,7 @@ func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Reques
 // their files, and the write disk.
 func describe(req Request, size rwdisk.Size) (*spec.Run, error) {
 	run := req.Run
-	run.Hostname = req.Record.Name
+	run.Hostname = req.Description.Name
 	run.MountOptions = slices.Clone(req.Plan.MountOptions)
 	run.Layers = make([]spec.Layer, len(req.Plan.Layers))
 	for i, l := range req.Plan.Layers {

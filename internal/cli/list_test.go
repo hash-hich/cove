@@ -19,13 +19,13 @@ import (
 const listedRepo = "https://git.example/r"
 
 // listed are the sandboxes the list tests print: one that runs, one stopped whose disk is gone,
-// one whose record could not be read, and one older than the inventory.
+// one whose description could not be read, and one older than the inventory.
 func listed(now time.Time) []cli.Listed {
 	used := int64(1288490189)
 	return []cli.Listed{
 		{
 			Entry: inventory.Entry{
-				Record: inventory.Record{
+				Description: inventory.Description{
 					ID: "0123456789abcdef", Name: demo, Image: goImage, Digest: "sha256:aa",
 					Repository: listedRepo, Branch: fix, Created: now.Add(-5 * time.Minute),
 					CPUs: 4, MemoryMiB: 512, Disk: 64 << 30,
@@ -36,7 +36,7 @@ func listed(now time.Time) []cli.Listed {
 		},
 		{
 			Entry: inventory.Entry{
-				Record: inventory.Record{
+				Description: inventory.Description{
 					ID: "fedcba9876543210", Name: "cove-fedcba987654", Image: "cove-sandbox:local",
 					Digest: "sha256:bb", Repository: listedRepo, Created: now.Add(-3 * time.Hour),
 					CPUs: 2, MemoryMiB: 2048, Disk: 1 << 40,
@@ -46,15 +46,15 @@ func listed(now time.Time) []cli.Listed {
 		},
 		{
 			Entry: inventory.Entry{
-				Record: inventory.Record{ID: "half"}, Dir: "/state/half", State: inventory.Stopped,
-				Err: inventory.ErrNoRecord,
+				Description: inventory.Description{ID: "half"}, Dir: "/state/half", State: inventory.Stopped,
+				Err: inventory.ErrNoMetadata,
 			},
 			DiskUsed: new(int64(4 << 20)),
 		},
 		{
 			Entry: inventory.Entry{
-				Record: inventory.Record{ID: "old"}, Dir: "/state/old", State: inventory.Unknown,
-				Err: inventory.ErrNoRecord,
+				Description: inventory.Description{ID: "old"}, Dir: "/state/old", State: inventory.Unknown,
+				Err: inventory.ErrNoMetadata,
 			},
 		},
 	}
@@ -107,8 +107,8 @@ func TestPrintListJSONIsTheContract(t *testing.T) {
 		 "repository": "https://git.example/r", "created": "2026-09-27T09:00:00Z",
 		 "cpus": 2, "memory": 2147483648, "disk": 1099511627776, "dir": "/state/fedcba9876543210"},
 		{"id": "half", "state": "stopped", "diskUsed": 4194304, "dir": "/state/half",
-		 "error": "no record"},
-		{"id": "old", "state": "unknown", "dir": "/state/old", "error": "no record"}
+		 "error": "no metadata.json"},
+		{"id": "old", "state": "unknown", "dir": "/state/old", "error": "no metadata.json"}
 	]`, out.String())
 }
 
@@ -163,7 +163,7 @@ func TestListReportsTheInventory(t *testing.T) {
 	require.JSONEq(t, `[]`, stdout)
 
 	root := sandboxRoot(t)
-	_, lock, err := inventory.Add(t.Context(), root, inventory.Record{ID: "0123456789abcdef", Name: demo})
+	_, lock, err := inventory.Add(t.Context(), root, inventory.Description{ID: "0123456789abcdef", Name: demo})
 	require.NoError(t, err)
 
 	for _, args := range [][]string{listArgs("-q"), {"ls", "-q"}, {"ps", "-q"}} {
@@ -205,7 +205,7 @@ func TestListWarnsInOneShortLinePerSandbox(t *testing.T) {
 		{
 			name: "older than the inventory",
 			l:    listed(time.Now())[3],
-			want: []string{"no lock, state unknown", "no record"},
+			want: []string{"no lock, state unknown", "no metadata.json"},
 		},
 		{
 			name: "a disk that cannot be measured says the cause, not the path",
@@ -213,11 +213,11 @@ func TestListWarnsInOneShortLinePerSandbox(t *testing.T) {
 			want: []string{"cannot measure its disk: permission denied"},
 		},
 		{
-			name: "a record changed by hand",
+			name: "a description changed by hand",
 			l: cli.Listed{Entry: inventory.Entry{
-				State: inventory.Stopped, Err: errors.New("unreadable record: unexpected end of JSON input"),
+				State: inventory.Stopped, Err: errors.New("unreadable metadata.json: unexpected end of JSON input"),
 			}},
-			want: []string{"unreadable record: unexpected end of JSON input"},
+			want: []string{"unreadable metadata.json: unexpected end of JSON input"},
 		},
 	}
 	for _, tt := range tests {

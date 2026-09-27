@@ -144,7 +144,7 @@ func run(ctx context.Context, a *App, opts RunOptions) (string, error) {
 	id := hex.EncodeToString(randomBytes(32))
 	vm := cmp.Or(opts.Spec.Name, "cove-"+id[:12])
 	sb, err := sandbox.Create(ctx, root, sandbox.Request{
-		Record: inventory.Record{
+		Description: inventory.Description{
 			ID: id, Name: vm, Image: opts.Spec.Image, Digest: digest.String(),
 			Repository: opts.URL, Branch: opts.Spec.Branch, Created: time.Now().UTC(),
 		},

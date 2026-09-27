@@ -1,5 +1,5 @@
 // Package inventory keeps the set of the sandboxes of this machine: one directory per sandbox under
-// a root of cove, with the record of its creation and the lock its VM holds by living. It knows
+// a root of cove, with the description of the sandbox and the lock its VM holds by living. It knows
 // which sandboxes exist and whether their VM runs, and nothing of what a sandbox holds.
 //
 // A sandbox is cove's because its directory is under the root, which only cove writes, and its VM
@@ -27,14 +27,16 @@ import (
 )
 
 // The files the inventory keeps, the lock of the root beside the directories of the sandboxes, and
-// the record and the lock of each sandbox in its directory.
+// the description and the lock of each sandbox in its directory. The description is metadata.json,
+// a name that does not invite a person to edit it.
 const (
-	lockFile   = "lock"
-	recordFile = "record.json"
+	lockFile     = "lock"
+	metadataFile = "metadata.json"
 )
 
-// Record is what cove knows of a sandbox when it creates it, written once and never changed.
-type Record struct {
+// Description is what cove knows of a sandbox: what run asked for and what it got. Only cove writes
+// it, when it creates the sandbox and whenever the sandbox changes.
+type Description struct {
 	// ID names the sandbox and its directory; Name is the name of its VM, unique among the
 	// sandboxes of the root, stopped ones included.
 	ID   string `json:"id"`
@@ -72,29 +74,29 @@ const (
 
 // Entry is a sandbox as it is found on the host.
 type Entry struct {
-	// Record is what its record says, the ID aside empty when Err is set.
-	Record
+	// Description is what its metadata.json says, empty but for the ID when Err is set.
+	Description
 	// Dir is its directory, State whether its VM runs.
 	Dir   string
 	State State
-	// Err says why its record could not be read, without the path, which Dir gives: ErrNoRecord
+	// Err says why its description could not be read, without the path, which Dir gives: ErrNoMetadata
 	// for a creation that ended before it was written or a sandbox older than the inventory, and
 	// another error for a directory that someone other than cove changed. The entry is reported
 	// all the same.
 	Err error
 }
 
-// ErrNoRecord is the Err of an entry whose directory holds no record.
-var ErrNoRecord = errors.New("no record")
+// ErrNoMetadata is the Err of an entry whose directory holds no metadata.json.
+var ErrNoMetadata = errors.New("no " + metadataFile)
 
 // ErrNameInUse is returned by Add when another sandbox of the root carries the name.
 var ErrNameInUse = errors.New("name already in use")
 
-// Add creates the directory of the sandbox rec describes under root, writes its record and takes
+// Add creates the directory of the sandbox desc describes under root, writes its description and takes
 // its lock, and returns both: the caller hands the lock to the cove-vmm of the sandbox, or removes
 // the sandbox with Remove. It returns ErrNameInUse when a sandbox of root, running or not, carries
-// the name of rec, since a name is what the other verbs find a sandbox by.
-func Add(ctx context.Context, root string, rec Record) (string, *filelock.Lock, error) {
+// the name of desc, since a name is what the other verbs find a sandbox by.
+func Add(ctx context.Context, root string, desc Description) (string, *filelock.Lock, error) {
 	unlock, err := lockRoot(ctx, root)
 	if err != nil {
 		return "", nil, err
@@ -105,15 +107,15 @@ func Add(ctx context.Context, root string, rec Record) (string, *filelock.Lock, 
 		return "", nil, err
 	}
 	for _, e := range entries {
-		if e.Err == nil && e.Name == rec.Name {
-			return "", nil, fmt.Errorf("%w: %s is the name of sandbox %s", ErrNameInUse, rec.Name, e.ID)
+		if e.Err == nil && e.Name == desc.Name {
+			return "", nil, fmt.Errorf("%w: %s is the name of sandbox %s", ErrNameInUse, desc.Name, e.ID)
 		}
 	}
-	dir := filepath.Join(root, rec.ID)
+	dir := filepath.Join(root, desc.ID)
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		return "", nil, fmt.Errorf("create the directory of the sandbox: %w", err)
 	}
-	lock, err := enter(dir, rec)
+	lock, err := enter(dir, desc)
 	if err != nil {
 		_ = os.RemoveAll(dir)
 		return "", nil, err
@@ -121,9 +123,9 @@ func Add(ctx context.Context, root string, rec Record) (string, *filelock.Lock, 
 	return dir, lock, nil
 }
 
-// enter takes the lock of the sandbox in dir, then writes its record: a sandbox that has one is
+// enter takes the lock of the sandbox in dir, then writes its description: a sandbox that has one is
 // running from the moment it is seen.
-func enter(dir string, rec Record) (*filelock.Lock, error) {
+func enter(dir string, desc Description) (*filelock.Lock, error) {
 	lock, ok, err := filelock.Try(filepath.Join(dir, lockFile))
 	if err != nil {
 		return nil, err //nolint:wrapcheck // Try names the lock.
@@ -131,12 +133,12 @@ func enter(dir string, rec Record) (*filelock.Lock, error) {
 	if !ok {
 		return nil, fmt.Errorf("the lock of %s is held by another process", dir)
 	}
-	out, err := json.Marshal(rec)
+	out, err := json.Marshal(desc)
 	if err != nil {
 		lock.Release()
-		return nil, fmt.Errorf("encode the record of the sandbox: %w", err)
+		return nil, fmt.Errorf("encode the description of the sandbox: %w", err)
 	}
-	if err := writeFile(filepath.Join(dir, recordFile), out); err != nil {
+	if err := writeFile(filepath.Join(dir, metadataFile), out); err != nil {
 		lock.Release()
 		return nil, err
 	}
@@ -157,7 +159,7 @@ func Remove(ctx context.Context, root, id string) error {
 	return nil
 }
 
-// List returns every sandbox of root, the latest created first, and those whose record cannot be
+// List returns every sandbox of root, the latest created first, and those whose description cannot be
 // read last. A root that does not exist holds no sandbox, and List does not create it.
 func List(ctx context.Context, root string) ([]Entry, error) {
 	if _, err := os.Stat(root); errors.Is(err, fs.ErrNotExist) {
@@ -198,8 +200,8 @@ func read(root string) ([]Entry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("look at sandbox %s: %w", d.Name(), err)
 		}
-		e.Record, e.Err = readRecord(e.Dir)
-		// The directory names the sandbox whatever its record says, so that it can be found.
+		e.Description, e.Err = readDescription(e.Dir)
+		// The directory names the sandbox whatever its description says, so that it can be found.
 		e.ID = d.Name()
 		entries = append(entries, e)
 	}
@@ -225,25 +227,26 @@ func state(path string) (State, error) {
 	return Stopped, nil
 }
 
-// readRecord reads the record of the sandbox in dir, which must name the directory it is in.
-func readRecord(dir string) (Record, error) {
-	var rec Record
-	//nolint:gosec // G304: the record of a sandbox, in a directory of the root.
-	out, err := os.ReadFile(filepath.Join(dir, recordFile))
+// readDescription reads the description of the sandbox in dir, which must name the directory it is
+// in.
+func readDescription(dir string) (Description, error) {
+	var desc Description
+	//nolint:gosec // G304: the description of a sandbox, in a directory of the root.
+	out, err := os.ReadFile(filepath.Join(dir, metadataFile))
 	if errors.Is(err, fs.ErrNotExist) {
-		return Record{}, ErrNoRecord
+		return Description{}, ErrNoMetadata
 	}
 	// The entry carries its directory, so the error names the cause and not the path again.
 	if pe, ok := errors.AsType[*fs.PathError](err); ok {
-		return Record{}, fmt.Errorf("unreadable record: %w", pe.Err)
+		return Description{}, fmt.Errorf("unreadable %s: %w", metadataFile, pe.Err)
 	}
-	if err := json.Unmarshal(out, &rec); err != nil {
-		return Record{}, fmt.Errorf("unreadable record: %w", err)
+	if err := json.Unmarshal(out, &desc); err != nil {
+		return Description{}, fmt.Errorf("unreadable %s: %w", metadataFile, err)
 	}
-	if rec.ID != filepath.Base(dir) {
-		return Record{}, fmt.Errorf("the record names sandbox %q, not the one of its directory", rec.ID)
+	if desc.ID != filepath.Base(dir) {
+		return Description{}, fmt.Errorf("%s names sandbox %q, not the one of its directory", metadataFile, desc.ID)
 	}
-	return rec, nil
+	return desc, nil
 }
 
 // lockRoot creates root when it does not exist, takes its lock, and returns what releases it.
@@ -258,16 +261,16 @@ func lockRoot(ctx context.Context, root string) (func(), error) {
 	return lock.Release, nil
 }
 
-// writeFile writes data at path through a temporary and a rename, so that a record is whole or
+// writeFile writes data at path through a temporary and a rename, so that a description is whole or
 // absent whatever interrupts it.
 func writeFile(path string, data []byte) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("write the record: %w", err)
+		return fmt.Errorf("write the description: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("write the record: %w", err)
+		return fmt.Errorf("write the description: %w", err)
 	}
 	return nil
 }

@@ -33,7 +33,7 @@ type ListOptions struct {
 }
 
 // listCommand reports every sandbox of the inventory as the arguments of list ask, and returns the
-// process exit code. A sandbox whose record cannot be read, or whose state cannot be told, is
+// process exit code. A sandbox whose description cannot be read, or whose state cannot be told, is
 // reported all the same, and why on stderr: it is on the host, and whoever cleans up must know it
 // is there.
 func listCommand(a *App, args []string) int {
@@ -133,7 +133,7 @@ const shortID = 12
 // listedSandbox is a sandbox as list --format json reports it, a contract for the programs that
 // read it: a field is added, never renamed or removed. Disk is the size the write disk may reach,
 // DiskUsed the space it takes on the host. Dir is where the files of the sandbox are, for whoever
-// cleans up; Error says why its record could not be read, the fields it holds empty.
+// cleans up; Error says why its metadata.json could not be read, the fields it holds empty.
 type listedSandbox struct {
 	ID         string    `json:"id"`
 	Name       string    `json:"name,omitempty"`
@@ -356,7 +356,7 @@ has ended, whatever ended it. It is unknown when the directory of the sandbox
 has no lock, left by a sandbox older than the inventory or changed by hand: its
 VM may still run. DISK is the space the write disk takes on the host, then the
 most it may take, in powers of two as run takes them: 1G is 1024M. The vCPUs
-and the memory of the VM are in the json. A sandbox whose record cannot be read, or whose state is
+and the memory of the VM are in the json. A sandbox whose metadata.json cannot be read, or whose state is
 unknown, is listed all the same with the reason on stderr, since its files are
 still on the host.
 
@@ -371,7 +371,7 @@ The json format is an array, one object per sandbox, latest created first:
 id, name, state (running, stopped or unknown), image, digest, repository,
 branch, created, cpus, memory in bytes, disk, the size in bytes the write disk
 may reach, diskUsed, the bytes it takes on the host, dir, the directory of its
-files, and error when its record could not be read. A field that is not known
+files, and error when its metadata.json could not be read. A field that is not known
 is left out. A field is added, never renamed or removed.
 
 Exit codes: 0; 2 on a usage error; 125 when cove could not carry the command out.

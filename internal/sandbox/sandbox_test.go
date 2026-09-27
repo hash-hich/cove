@@ -34,7 +34,7 @@ func TestDescribeSizesEachLayerByItsFile(t *testing.T) {
 		return dir + "/" + name
 	}
 	req := sandbox.Request{
-		Record: inventory.Record{Name: "demo"},
+		Description: inventory.Description{Name: "demo"},
 		Plan: erofs.Plan{
 			MountOptions: []string{"xino=on"},
 			Layers: []erofs.Mount{
