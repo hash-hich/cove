@@ -192,3 +192,59 @@ func TestASandboxWhoseLockIsGoneIsUnknownNotStopped(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []inventory.Entry{{Description: desc, Dir: dir, State: inventory.Unknown}}, got)
 }
+
+func TestFind(t *testing.T) {
+	t.Parallel()
+
+	const front = "a1b2c3"
+	entries := []inventory.Entry{
+		{Description: inventory.Description{ID: front, Name: "front"}},
+		{Description: inventory.Description{ID: "a1f0", Name: "a1b2c3d"}},
+		{Description: inventory.Description{ID: "b9"}, Err: inventory.ErrNoMetadata},
+	}
+	tests := []struct {
+		name, target, want string
+		wantErr            error
+	}{
+		{name: "whole ID", target: front, want: front},
+		{name: "name", target: "front", want: front},
+		{name: "name before a prefix", target: "a1b2c3d", want: "a1f0"},
+		{name: "prefix", target: "a1b", want: front},
+		{name: "ID of an unreadable description", target: "b9", want: "b9"},
+		{name: "prefix of several", target: "a1", wantErr: inventory.ErrAmbiguous},
+		{name: "prefix of a name", target: "fro", wantErr: inventory.ErrNotFound},
+		{name: "unknown", target: "back", wantErr: inventory.ErrNotFound},
+		{name: "empty", target: "", wantErr: inventory.ErrNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := inventory.Find(entries, tt.target)
+
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got.ID)
+		})
+	}
+}
+
+func TestHoldWaitsForTheVMToEnd(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	dir, lock, err := inventory.Add(t.Context(), root, description("a1", demo, time.Now()))
+	require.NoError(t, err)
+	time.AfterFunc(2*filelock.Poll, lock.Release)
+
+	held, err := inventory.Hold(t.Context(), dir)
+	require.NoError(t, err)
+	t.Cleanup(held.Release)
+
+	got, err := inventory.List(t.Context(), root)
+	require.NoError(t, err)
+	require.Equal(t, inventory.Running, got[0].State, "a held sandbox starts no VM, and reads as running")
+}

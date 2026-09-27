@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"gitlab.com/hich-hich/cove/internal/filelock"
@@ -92,6 +93,12 @@ var ErrNoMetadata = errors.New("no " + metadataFile)
 // ErrNameInUse is returned by Add when another sandbox of the root carries the name.
 var ErrNameInUse = errors.New("name already in use")
 
+// ErrNotFound is returned by Find when no sandbox answers to the target.
+var ErrNotFound = errors.New("no such sandbox")
+
+// ErrAmbiguous is returned by Find when a prefix starts the IDs of several sandboxes.
+var ErrAmbiguous = errors.New("several sandboxes answer to the prefix")
+
 // Add creates the directory of the sandbox desc describes under root, writes its description and takes
 // its lock, and returns both: the caller hands the lock to the cove-vmm of the sandbox, or removes
 // the sandbox with Remove. It returns ErrNameInUse when a sandbox of root, running or not, carries
@@ -143,6 +150,51 @@ func enter(dir string, desc Description) (*filelock.Lock, error) {
 		return nil, err
 	}
 	return lock, nil
+}
+
+// Find returns the entry of entries target names, as docker finds a container: by its whole ID,
+// then by its name, then by a prefix of its ID that starts no other, which is what list shows.
+// A name is matched whole, never by a prefix. It returns ErrNotFound or ErrAmbiguous otherwise.
+func Find(entries []Entry, target string) (Entry, error) {
+	if e, ok := findWhole(entries, target); ok {
+		return e, nil
+	}
+	var found []Entry
+	for _, e := range entries {
+		if target != "" && strings.HasPrefix(e.ID, target) {
+			found = append(found, e)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return Entry{}, fmt.Errorf("%w: %s", ErrNotFound, target)
+	case 1:
+		return found[0], nil
+	default:
+		return Entry{}, fmt.Errorf("%w %s: %d of them", ErrAmbiguous, target, len(found))
+	}
+}
+
+// findWhole returns the entry of entries whose whole ID, then whose name, is target.
+func findWhole(entries []Entry, target string) (Entry, bool) {
+	for _, e := range entries {
+		if e.ID == target {
+			return e, true
+		}
+	}
+	for _, e := range entries {
+		if e.Err == nil && e.Name == target {
+			return e, true
+		}
+	}
+	return Entry{}, false
+}
+
+// Hold waits until no VM runs in the sandbox of dir, then takes its lock and returns it: until
+// it is released, the sandbox reads as running and no VM starts in it. Only ctx ends the wait.
+func Hold(ctx context.Context, dir string) (*filelock.Lock, error) {
+	//nolint:wrapcheck // Take names the lock and why it gave up.
+	return filelock.Take(ctx, filepath.Join(dir, lockFile), nil)
 }
 
 // Remove removes the sandbox id of root, its directory and all it holds, under the lock of the
