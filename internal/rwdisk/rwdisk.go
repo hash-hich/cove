@@ -85,6 +85,17 @@ func Free(dir string) (int64, error) {
 	return times(st.Bavail, st.Bsize), nil
 }
 
+// Usage returns the space the disk at path takes on the host: the blocks the file holds, what the
+// run wrote and not the size it was allowed. The error wraps fs.ErrNotExist when there is no disk.
+func Usage(path string) (int64, error) {
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		return 0, fmt.Errorf("measure the write disk: %w", err)
+	}
+	// st_blocks counts units of 512 bytes on Linux and macOS, whatever the block of the file system.
+	return st.Blocks * 512, nil
+}
+
 // times returns blocks blocks of size bytes. The size of a block is an int64 on Linux and a uint32
 // on macOS, which one conversion could not take on both without a linter refusing it on one.
 func times[B int64 | uint32](blocks uint64, size B) int64 {

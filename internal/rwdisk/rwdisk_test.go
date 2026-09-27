@@ -1,6 +1,9 @@
 package rwdisk_test
 
 import (
+	"bytes"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -77,4 +80,34 @@ func TestEverySizeHasAnEmptyExt4(t *testing.T) {
 	for _, s := range rwdisk.Sizes {
 		require.NoError(t, rwdisk.Create(filepath.Join(t.TempDir(), "rw.ext4"), s), s.String())
 	}
+}
+
+func TestUsageCountsWhatWasWrittenNotTheSize(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "rw.ext4")
+	//nolint:gosec // G304: a file of the test, in its directory.
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	require.NoError(t, f.Truncate(8*gib))
+	empty, err := rwdisk.Usage(path)
+	require.NoError(t, err)
+	require.Zero(t, empty, "a sparse file of 8g that holds nothing takes nothing")
+
+	written := bytes.Repeat([]byte{1}, 8<<20)
+	_, err = f.WriteAt(written, 2*gib)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	got, err := rwdisk.Usage(path)
+	require.NoError(t, err)
+	require.Equal(t, int64(len(written)), got)
+}
+
+func TestUsageOfNoDiskSaysSo(t *testing.T) {
+	t.Parallel()
+
+	_, err := rwdisk.Usage(filepath.Join(t.TempDir(), "rw.ext4"))
+
+	require.ErrorIs(t, err, fs.ErrNotExist)
 }
