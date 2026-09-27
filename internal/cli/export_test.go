@@ -32,3 +32,6 @@ var Warnings = warnings
 
 // RepositoryColumn exposes repositoryColumn to the tests of the package.
 var RepositoryColumn = repositoryColumn
+
+// StopReport exposes stopReport to the tests of the package.
+var StopReport = stopReport

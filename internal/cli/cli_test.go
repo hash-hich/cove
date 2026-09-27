@@ -2,8 +2,10 @@ package cli_test
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -11,6 +13,8 @@ import (
 	"gitlab.com/hich-hich/cove/internal/cli"
 	"gitlab.com/hich-hich/cove/internal/image"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
+	"gitlab.com/hich-hich/cove/internal/sandbox"
+	"gitlab.com/hich-hich/cove/internal/vminit/control"
 )
 
 const (
@@ -109,6 +113,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "stop all with target", args: stopArgs("--all", demo), wantStderr: "takes no target"},
 		{name: "stop unknown flag", args: stopArgs("--bogus", demo), wantStderr: unknownFlag},
 		{name: "stop podman ignore", args: stopArgs("-i", demo), wantStderr: "not defined: -i"},
+		{name: "stop signal", args: stopArgs("-s", "SIGKILL", demo), wantStderr: "not defined: -s"},
 		{name: "stop bad time", args: stopArgs("-t", "x", demo), wantStderr: "invalid value"},
 		{name: "stop negative time", args: stopArgs("-t", "-1", demo), wantStderr: "must be positive"},
 		{name: "list unknown flag", args: listArgs("--bogus"), wantStderr: unknownFlag},
@@ -259,27 +264,26 @@ func TestParseRun(t *testing.T) {
 func TestParseStop(t *testing.T) {
 	t.Parallel()
 
+	const stopDefault = 15 * time.Second
+
 	tests := []struct {
 		name    string
 		args    []string
 		want    cli.StopSpec
 		wantAll bool
 	}{
-		{name: "one target", args: []string{demo}, want: cli.StopSpec{Targets: []string{demo}}},
-		{name: "several targets", args: []string{"a", "b"}, want: cli.StopSpec{Targets: []string{"a", "b"}}},
-		{name: "all", args: []string{"--all"}, want: cli.StopSpec{}, wantAll: true},
-		{name: "all short", args: []string{"-a"}, want: cli.StopSpec{}, wantAll: true},
+		{name: "one target", args: []string{demo}, want: cli.StopSpec{Targets: []string{demo}, Timeout: stopDefault}},
 		{
-			name: "every option",
-			args: []string{"-s", "SIGKILL", "-t", "30", demo},
-			want: cli.StopSpec{Targets: []string{demo}, Signal: "SIGKILL", Timeout: new(30)},
+			name: "several targets", args: []string{"a", "b"},
+			want: cli.StopSpec{Targets: []string{"a", "b"}, Timeout: stopDefault},
 		},
+		{name: "all", args: []string{"--all"}, want: cli.StopSpec{Timeout: stopDefault}, wantAll: true},
+		{name: "all short", args: []string{"-a"}, want: cli.StopSpec{Timeout: stopDefault}, wantAll: true},
 		{
-			name: longForms,
-			args: []string{"--signal=SIGINT", "--time=0", demo},
-			want: cli.StopSpec{Targets: []string{demo}, Signal: "SIGINT", Timeout: new(0)},
+			name: "time", args: []string{"-t", "30", demo},
+			want: cli.StopSpec{Targets: []string{demo}, Timeout: 30 * time.Second},
 		},
-		{name: "time left to the backend", args: []string{demo}, want: cli.StopSpec{Targets: []string{demo}}},
+		{name: longForms, args: []string{"--time=0", demo}, want: cli.StopSpec{Targets: []string{demo}}},
 	}
 
 	for _, tt := range tests {
@@ -392,8 +396,6 @@ func TestVerbsWithoutABackend(t *testing.T) {
 	}{
 		{name: "send attached", args: sendArgs(demo)},
 		{name: "send driven", args: sendArgs(demo, "fix the ci")},
-		{name: "stop one target", args: stopArgs(demo)},
-		{name: "stop all", args: stopArgs("--all")},
 	}
 
 	for _, tt := range tests {
@@ -473,5 +475,43 @@ func TestPullFailsWhenTheRegistryCannotBeReached(t *testing.T) {
 		lines := strings.Split(strings.TrimSuffix(stderr.String(), "\n"), "\n")
 		require.Len(t, lines, 1, stderr.String())
 		require.Contains(t, lines[0], "cove pull: 127.0.0.1:1: ")
+	}
+}
+
+func TestStopReport(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		st   sandbox.Stopped
+		want []string
+	}{
+		{name: "the init carried it out", st: sandbox.Stopped{Steps: []control.Step{
+			{Name: control.Received}, {Name: control.ProcessesEnded}, {Name: control.Synced}, {Name: control.ReadOnly},
+		}}},
+		{
+			name: "a step failed",
+			st:   sandbox.Stopped{Steps: []control.Step{{Name: control.Received}, {Name: control.ReadOnly, Error: "busy"}}},
+			want: []string{"write disk read only failed: busy"},
+		},
+		{
+			name: "killed at work",
+			st: sandbox.Stopped{
+				Killed: errors.New("the VM did not end within 15s"),
+				Steps:  []control.Step{{Name: control.Received}},
+			},
+			want: []string{"cove-vmm killed: the VM did not end within 15s; the init had reached: received"},
+		},
+		{
+			name: "killed unreached",
+			st:   sandbox.Stopped{Killed: errors.New("the init could not be reached")},
+			want: []string{"cove-vmm killed: the init could not be reached; the init reported no step"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, cli.StopReport(tt.st))
+		})
 	}
 }

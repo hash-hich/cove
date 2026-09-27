@@ -356,9 +356,7 @@ Options:
 
 Not complete yet: run creates the VM and boots it on the image, then prints its
 name, but the repository does not reach ` + codebase.Work + ` and no instruction reaches
-the agent. The VM runs until its cove-vmm, named on stderr, is killed: stop is
-not written yet, so nothing removes a sandbox, --rm or not, and no verb starts
-one again.
+the agent. The VM runs until stop stops it, and no verb starts it again.
 
 Exit codes: 0 once ` + codebase.Work + ` is ready; 2 on a usage error; 125 when cove could not
 create the sandbox, before the VM or after it; the message of git or of the
