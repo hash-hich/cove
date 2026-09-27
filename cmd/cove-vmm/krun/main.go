@@ -113,15 +113,21 @@ func configure(vm vmmproto.VM) (*libkrun.Ctx, error) {
 	if err := ctx.SetKernel(vm.Kernel, format, vm.Initramfs, vm.Cmdline); err != nil {
 		return nil, err //nolint:wrapcheck // The binding names libkrun and the call.
 	}
-	for i, d := range vm.Disks {
-		if err := ctx.AddDisk("d"+strconv.Itoa(i), d.Path, d.ReadOnly); err != nil {
-			return nil, err //nolint:wrapcheck // The binding names libkrun and the disk.
-		}
-	}
-	if err := ctx.SetConsoleOutput(vm.Console); err != nil {
-		return nil, err //nolint:wrapcheck // The binding names libkrun and the call.
+	if err := attach(ctx, vm); err != nil {
+		return nil, err
 	}
 	return ctx, nil
+}
+
+// attach gives libkrun the devices of vm: its disks and its console.
+func attach(ctx *libkrun.Ctx, vm vmmproto.VM) error {
+	for i, d := range vm.Disks {
+		if err := ctx.AddDisk("d"+strconv.Itoa(i), d.Path, d.ReadOnly); err != nil {
+			return err //nolint:wrapcheck // The binding names libkrun and the disk.
+		}
+	}
+	//nolint:wrapcheck // The binding names libkrun and the call.
+	return ctx.SetConsoleOutput(vm.Console)
 }
 
 // answer sends cove the Status of err, and returns err, or the failure to send it.
