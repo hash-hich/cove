@@ -1,16 +1,16 @@
-// Package kernelcheck says whether a kernel carries what cove requires of it, read from the
+// Package kernel says whether a kernel carries what cove requires of it, read from the
 // configuration the kernel embeds. The kernel is replaceable: cove's own is the default, and a
 // user may bring one. The requirement is a closed list, so that a kernel that lacks an option is
 // refused with its name instead of failing in the middle of a run.
 //
 // The list is checked on the host, in the file of the kernel, before the VM exists
-// (CheckKernelFile). A kernel whose configuration cannot be read there, a compressed image, is
+// (CheckFile). A kernel whose configuration cannot be read there, a compressed image, is
 // checked in the guest instead (CheckRunning), and what the guest cannot report, a kernel that
-// never runs the init, is read on the console (FromConsole).
+// never runs the init, is read on the console (CheckConsole).
 //
 // The list says nothing of what the agent may do: an option compiled in is what the kernel
 // permits, and a container engine the image brings checks its own needs.
-package kernelcheck
+package kernel
 
 import (
 	"bufio"

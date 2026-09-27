@@ -48,7 +48,7 @@ decompressor is built in.
 | `arm64.config`, `x86_64.config` | The machine each backend gives, read in its device tree or its code, the errata and CPU features of the architecture, the clock, and on x86_64 the 32 bit binaries |
 
 `cove.config` is where this kernel meets the closed list of
-[internal/kernelcheck](../internal/kernelcheck/kernelcheck.go), and nothing
+[internal/kernel](../internal/kernel/kernel.go), and nothing
 else: tests hold the fragment to the list both ways. The host checks the list
 in the file of the kernel before the VM exists, reading the configuration
 `IKCONFIG` embeds between `IKCFG_ST` and `IKCFG_ED`, which the uncompressed

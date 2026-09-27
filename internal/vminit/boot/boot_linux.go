@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"gitlab.com/hich-hich/cove/internal/kernelcheck"
+	"gitlab.com/hich-hich/cove/internal/kernel"
 	"gitlab.com/hich-hich/cove/internal/vminit/imageuser"
 	"gitlab.com/hich-hich/cove/internal/vminit/launch"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
@@ -77,7 +77,7 @@ func boot() (*spec.Run, error) {
 			return nil, err
 		}
 	}
-	if err := kernelcheck.CheckRunning(); err != nil {
+	if err := kernel.CheckRunning(); err != nil {
 		return nil, err //nolint:wrapcheck // The refusal names what the kernel lacks.
 	}
 	s, err := spec.Read(spec.Path)
@@ -141,8 +141,8 @@ func mount(source, fstype, target string, flags uintptr, data string) error {
 		return err
 	}
 	if err := unix.Mount(source, target, fstype, flags, data); err != nil {
-		//nolint:wrapcheck // FromMount keeps the error it was given, or names the option missing.
-		return kernelcheck.FromMount(fstype, fmt.Errorf("mount %s on %s: %w", fstype, target, err))
+		//nolint:wrapcheck // CheckMount keeps the error it was given, or names the option missing.
+		return kernel.CheckMount(fstype, fmt.Errorf("mount %s on %s: %w", fstype, target, err))
 	}
 	return nil
 }

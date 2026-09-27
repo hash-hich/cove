@@ -216,7 +216,7 @@ of `kernel/config/` alone, without modules, for arm64 and x86_64, and
 permissive enough for a development workstation: the agent's own sandboxes,
 container engines, Kubernetes in containers, FUSE, loop, perf and eBPF with
 BTF. Its identity is the sha256 of the file the host hands the VMM. A kernel
-the user brings is accepted when it meets the list of `internal/kernelcheck`,
+the user brings is accepted when it meets the list of `internal/kernel`,
 read in its file before boot, else from `/proc/config.gz`, so a kernel without
 `IKCONFIG` is refused. Speculative execution mitigations are off.
 

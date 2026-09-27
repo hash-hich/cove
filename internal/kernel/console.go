@@ -1,4 +1,4 @@
-package kernelcheck
+package kernel
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ var panicMark = []byte("Kernel panic - not syncing: ")
 // prints them and dies when a system call it needs returns ENOSYS, 38 on both architectures. It
 // creates its epoll and eventfd lazily, at the first descriptor or timer, so the init may have
 // printed lines before. Without futexes the runtime spins rather than dies, and its line comes
-// only at the first wake of a parked thread, perhaps never: CheckKernelFile is what refuses it.
+// only at the first wake of a parked thread, perhaps never: CheckFile is what refuses it.
 var consoleSigns = []struct {
 	panic, sign *regexp.Regexp
 	option      string
@@ -50,12 +50,12 @@ var consoleSigns = []struct {
 	},
 }
 
-// FromConsole reads the console of a run that ended in a kernel panic with neither a refusal nor
+// CheckConsole reads the console of a run that ended in a kernel panic with neither a refusal nor
 // a result from the init, and returns a *MissingError naming the options whose absence the
-// console shows, up to the first panic. It is the fallback for a kernel CheckKernelFile could not
+// console shows, up to the first panic. It is the fallback for a kernel CheckFile could not
 // read: a kernel that cannot run the init is refused by the host, since the init never runs to
 // refuse it. It returns nil when there is no panic, or when the panic shows none of them.
-func FromConsole(console []byte) error {
+func CheckConsole(console []byte) error {
 	at := bytes.Index(console, panicMark)
 	if at < 0 {
 		return nil

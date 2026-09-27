@@ -1,4 +1,4 @@
-package kernelcheck_test
+package kernel_test
 
 import (
 	"bufio"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/hich-hich/cove/internal/kernelcheck"
+	"gitlab.com/hich-hich/cove/internal/kernel"
 )
 
 // The command lines of the two backends: libkrun gives a virtio console, Firecracker an 8250, and
@@ -34,7 +34,7 @@ const (
 // with the lines of extra appended, as make writes a .config.
 func config(cmdline, goarch string, except map[string]string, extra ...string) string {
 	lines := []string{"#", "# Automatically generated file; DO NOT EDIT.", "#"}
-	for _, opt := range kernelcheck.Requirements(cmdline, goarch) {
+	for _, opt := range kernel.Requirements(cmdline, goarch) {
 		line, ok := except[opt]
 		switch {
 		case !ok:
@@ -59,7 +59,7 @@ func gzipped(t *testing.T, s string) []byte {
 
 func missingOf(t *testing.T, err error) []string {
 	t.Helper()
-	var missing *kernelcheck.MissingError
+	var missing *kernel.MissingError
 	require.ErrorAs(t, err, &missing)
 	return missing.Options
 }
@@ -70,9 +70,9 @@ func TestCheckAcceptsAKernelThatMeetsEveryRequirement(t *testing.T) {
 	for _, goarch := range goarches {
 		for _, cmdline := range []string{libkrunCmdline, firecrackerCmdline} {
 			cfg := config(cmdline, goarch, nil, "CONFIG_BRIDGE=y", `CONFIG_LOCALVERSION="-cove"`)
-			require.NoError(t, kernelcheck.CheckFor(strings.NewReader(cfg), cmdline, goarch), goarch)
+			require.NoError(t, kernel.CheckFor(strings.NewReader(cfg), cmdline, goarch), goarch)
 			// /proc/config.gz serves the same text compressed.
-			require.NoError(t, kernelcheck.CheckFor(bytes.NewReader(gzipped(t, cfg)), cmdline, goarch), goarch)
+			require.NoError(t, kernel.CheckFor(bytes.NewReader(gzipped(t, cfg)), cmdline, goarch), goarch)
 		}
 	}
 }
@@ -86,7 +86,7 @@ func TestCheckNamesEveryMissingOptionInTheOrderOfTheList(t *testing.T) {
 		"CONFIG_VIRTIO_BLK":         "",
 		virtioConsole:               "",
 	})
-	err := kernelcheck.CheckFor(bytes.NewReader(gzipped(t, cfg)), libkrunCmdline, "arm64")
+	err := kernel.CheckFor(bytes.NewReader(gzipped(t, cfg)), libkrunCmdline, "arm64")
 
 	require.Equal(t, []string{
 		"CONFIG_VIRTIO_BLK", "CONFIG_EROFS_FS_POSIX_ACL", "CONFIG_OVERLAY_FS", virtioConsole,
@@ -101,23 +101,23 @@ func TestCheckAsksForTheConsoleTheCommandLineNames(t *testing.T) {
 	// A kernel with a PL011 console only would pass a check that took any console, and write its
 	// refusal under libkrun to a port that is not there.
 	cfg := config("console=ttyAMA0", "arm64", nil)
-	require.NoError(t, kernelcheck.CheckFor(strings.NewReader(cfg), "console=ttyAMA0", "arm64"))
+	require.NoError(t, kernel.CheckFor(strings.NewReader(cfg), "console=ttyAMA0", "arm64"))
 	require.Equal(t, []string{virtioConsole},
-		missingOf(t, kernelcheck.CheckFor(strings.NewReader(cfg), libkrunCmdline, "arm64")))
+		missingOf(t, kernel.CheckFor(strings.NewReader(cfg), libkrunCmdline, "arm64")))
 
 	// The last console named is /dev/console.
-	require.NoError(t, kernelcheck.CheckFor(strings.NewReader(cfg), "console=hvc0 console=ttyAMA0", "arm64"))
+	require.NoError(t, kernel.CheckFor(strings.NewReader(cfg), "console=hvc0 console=ttyAMA0", "arm64"))
 
 	// On arm64 the 8250 of Firecracker is found in the device tree.
-	require.Contains(t, kernelcheck.Requirements("console=ttyS0", "arm64"), "CONFIG_SERIAL_OF_PLATFORM")
-	require.NotContains(t, kernelcheck.Requirements("console=ttyS0", "amd64"), "CONFIG_SERIAL_OF_PLATFORM")
+	require.Contains(t, kernel.Requirements("console=ttyS0", "arm64"), "CONFIG_SERIAL_OF_PLATFORM")
+	require.NotContains(t, kernel.Requirements("console=ttyS0", "amd64"), "CONFIG_SERIAL_OF_PLATFORM")
 }
 
 func TestCheckRefusesACommandLineWithoutAKnownConsole(t *testing.T) {
 	t.Parallel()
 
 	for _, cmdline := range []string{"rdinit=/init", "console=tty0"} {
-		err := kernelcheck.CheckFor(strings.NewReader(config(libkrunCmdline, "arm64", nil)), cmdline, "arm64")
+		err := kernel.CheckFor(strings.NewReader(config(libkrunCmdline, "arm64", nil)), cmdline, "arm64")
 		require.ErrorContains(t, err, "names no console cove knows", cmdline)
 	}
 }
@@ -126,9 +126,9 @@ func TestCheckAsksForCommandLineDevicesWhenTheCommandLineDeclaresThem(t *testing
 	t.Parallel()
 
 	cfg := config(libkrunCmdline, "amd64", nil, "CONFIG_SERIAL_8250_CONSOLE=y")
-	require.NoError(t, kernelcheck.CheckFor(strings.NewReader(cfg), "console=ttyS0", "amd64"))
+	require.NoError(t, kernel.CheckFor(strings.NewReader(cfg), "console=ttyS0", "amd64"))
 	require.Equal(t, []string{"CONFIG_VIRTIO_MMIO_CMDLINE_DEVICES"},
-		missingOf(t, kernelcheck.CheckFor(strings.NewReader(cfg), firecrackerCmdline, "amd64")))
+		missingOf(t, kernel.CheckFor(strings.NewReader(cfg), firecrackerCmdline, "amd64")))
 }
 
 func TestCheckRefusesAModule(t *testing.T) {
@@ -137,7 +137,7 @@ func TestCheckRefusesAModule(t *testing.T) {
 	// The init stacks the image before any /lib/modules exists: a module there is out of reach.
 	cfg := config(libkrunCmdline, "arm64", map[string]string{"CONFIG_EROFS_FS": "CONFIG_EROFS_FS=m"})
 	require.Equal(t, []string{"CONFIG_EROFS_FS"},
-		missingOf(t, kernelcheck.CheckFor(strings.NewReader(cfg), libkrunCmdline, "arm64")))
+		missingOf(t, kernel.CheckFor(strings.NewReader(cfg), libkrunCmdline, "arm64")))
 }
 
 func TestCheckDoesNotTakeAPrefixForTheOption(t *testing.T) {
@@ -146,23 +146,23 @@ func TestCheckDoesNotTakeAPrefixForTheOption(t *testing.T) {
 	// CONFIG_VSOCKETS_DIAG=y says nothing of CONFIG_VSOCKETS.
 	cfg := config(libkrunCmdline, "arm64", map[string]string{"CONFIG_VSOCKETS": ""}, "CONFIG_VSOCKETS_DIAG=y")
 	require.Equal(t, []string{"CONFIG_VSOCKETS"},
-		missingOf(t, kernelcheck.CheckFor(strings.NewReader(cfg), libkrunCmdline, "arm64")))
+		missingOf(t, kernel.CheckFor(strings.NewReader(cfg), libkrunCmdline, "arm64")))
 }
 
 func TestCheckFindsNothingInAnEmptyConfiguration(t *testing.T) {
 	t.Parallel()
 
-	missing := missingOf(t, kernelcheck.CheckFor(strings.NewReader(""), firecrackerCmdline, "amd64"))
-	require.Equal(t, kernelcheck.Requirements(firecrackerCmdline, "amd64"), missing)
+	missing := missingOf(t, kernel.CheckFor(strings.NewReader(""), firecrackerCmdline, "amd64"))
+	require.Equal(t, kernel.Requirements(firecrackerCmdline, "amd64"), missing)
 }
 
 func TestCheckRefusesABrokenCompressedConfiguration(t *testing.T) {
 	t.Parallel()
 
 	broken := gzipped(t, config(libkrunCmdline, "arm64", nil))
-	err := kernelcheck.CheckFor(bytes.NewReader(broken[:len(broken)/2]), libkrunCmdline, "arm64")
+	err := kernel.CheckFor(bytes.NewReader(broken[:len(broken)/2]), libkrunCmdline, "arm64")
 	require.Error(t, err)
-	var missing *kernelcheck.MissingError
+	var missing *kernel.MissingError
 	require.NotErrorAs(t, err, &missing)
 }
 
@@ -182,26 +182,26 @@ func TestCheckRunningReadsTheConfigurationAndCommandLineOfTheGuest(t *testing.T)
 	t.Parallel()
 
 	root := procAt(t, firecrackerCmdline, gzipped(t, config(firecrackerCmdline, "amd64", nil)))
-	require.NoError(t, kernelcheck.CheckRunningAt(root, "amd64"))
+	require.NoError(t, kernel.CheckRunningAt(root, "amd64"))
 
 	root = procAt(t, firecrackerCmdline,
 		gzipped(t, config(firecrackerCmdline, "amd64", map[string]string{"CONFIG_EXT4_FS": ""})))
-	require.Equal(t, []string{"CONFIG_EXT4_FS"}, missingOf(t, kernelcheck.CheckRunningAt(root, "amd64")))
+	require.Equal(t, []string{"CONFIG_EXT4_FS"}, missingOf(t, kernel.CheckRunningAt(root, "amd64")))
 }
 
 func TestCheckRunningBlamesTheRightOptionForAMissingFile(t *testing.T) {
 	t.Parallel()
 
 	// /proc is there but serves no configuration: nothing else says what the kernel carries.
-	err := kernelcheck.CheckRunningAt(procAt(t, libkrunCmdline, nil), "arm64")
+	err := kernel.CheckRunningAt(procAt(t, libkrunCmdline, nil), "arm64")
 	require.Equal(t, []string{"CONFIG_IKCONFIG_PROC"}, missingOf(t, err))
 
 	// No /proc at all: every file below is missing, and IKCONFIG_PROC is not the one to blame.
-	err = kernelcheck.CheckRunningAt(t.TempDir(), "arm64")
+	err = kernel.CheckRunningAt(t.TempDir(), "arm64")
 	require.Equal(t, []string{"CONFIG_PROC_FS"}, missingOf(t, err))
 }
 
-func TestCheckKernelFileReadsTheConfigurationTheImageEmbeds(t *testing.T) {
+func TestCheckFileReadsTheConfigurationTheImageEmbeds(t *testing.T) {
 	t.Parallel()
 
 	// The layout of kernel/configs.c: the gzip stream between two markers, amid the code.
@@ -217,15 +217,15 @@ func TestCheckKernelFileReadsTheConfigurationTheImageEmbeds(t *testing.T) {
 	}
 
 	path := image(config(libkrunCmdline, "arm64", nil))
-	require.NoError(t, kernelcheck.CheckKernelFileFor(path, libkrunCmdline, "arm64"))
+	require.NoError(t, kernel.CheckFileFor(path, libkrunCmdline, "arm64"))
 
 	// The four options the guest could never report are refused before boot.
 	path = image(config(libkrunCmdline, "arm64", map[string]string{binfmtELF: "", futex: ""}))
 	require.Equal(t, []string{binfmtELF, futex},
-		missingOf(t, kernelcheck.CheckKernelFileFor(path, libkrunCmdline, "arm64")))
+		missingOf(t, kernel.CheckFileFor(path, libkrunCmdline, "arm64")))
 }
 
-func TestCheckKernelFileSaysWhenTheImageShowsNoConfiguration(t *testing.T) {
+func TestCheckFileSaysWhenTheImageShowsNoConfiguration(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -238,8 +238,8 @@ func TestCheckKernelFileSaysWhenTheImageShowsNoConfiguration(t *testing.T) {
 	} {
 		path := filepath.Join(dir, name)
 		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
-		require.ErrorIs(t, kernelcheck.CheckKernelFileFor(path, libkrunCmdline, "arm64"),
-			kernelcheck.ErrNoEmbeddedConfig, name)
+		require.ErrorIs(t, kernel.CheckFileFor(path, libkrunCmdline, "arm64"),
+			kernel.ErrNoEmbeddedConfig, name)
 	}
 }
 
@@ -275,7 +275,7 @@ func TestCoveKernelFragmentMeetsTheList(t *testing.T) {
 		require.NoError(t, err)
 		for _, cmdline := range []string{libkrunCmdline, firecrackerCmdline} {
 			cfg := append(append([]byte(nil), cove...), arch...)
-			require.NoError(t, kernelcheck.CheckFor(bytes.NewReader(cfg), cmdline, goarch), goarch+" "+cmdline)
+			require.NoError(t, kernel.CheckFor(bytes.NewReader(cfg), cmdline, goarch), goarch+" "+cmdline)
 		}
 	}
 }
@@ -298,7 +298,7 @@ func TestCoveKernelFragmentHoldsNothingButTheList(t *testing.T) {
 		"CONFIG_SERIAL_8250":      true, // SERIAL_8250_CONSOLE.
 		"CONFIG_SHMEM":            true, // TMPFS.
 	}
-	every := kernelcheck.EveryOption()
+	every := kernel.EveryOption()
 	for _, opt := range fragmentLines(t, "cove.config") {
 		require.True(t, every[opt] || parents[opt], "%s is in cove.config but neither required nor a parent", opt)
 	}

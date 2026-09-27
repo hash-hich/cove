@@ -1,4 +1,4 @@
-package kernelcheck
+package kernel
 
 import (
 	"bytes"
@@ -18,11 +18,11 @@ var ErrNoEmbeddedConfig = errors.New("the kernel file shows no embedded configur
 // x86_64, so the stream is there as it is.
 var ikconfigStart = []byte("IKCFG_ST")
 
-// CheckKernelFile checks the kernel in the file at path, as it will be booted with cmdline, before
+// CheckFile checks the kernel in the file at path, as it will be booted with cmdline, before
 // the VM exists: every option it lacks is refused by name, those the guest could never report
 // included, since without them the init does not run. It returns ErrNoEmbeddedConfig when the file
 // shows no configuration, and a *MissingError when the kernel lacks what cove requires.
-func CheckKernelFile(path, cmdline string) error {
+func CheckFile(path, cmdline string) error {
 	return checkImage(path, cmdline, runtime.GOARCH)
 }
 

@@ -1,11 +1,11 @@
-package kernelcheck
+package kernel
 
-// CheckFor, CheckRunningAt and CheckKernelFileFor expose the checks of one architecture to the
+// CheckFor, CheckRunningAt and CheckFileFor expose the checks of one architecture to the
 // tests of the package, so that both are exercised whatever the host.
 var (
-	CheckFor           = checkArch
-	CheckRunningAt     = checkRunningAt
-	CheckKernelFileFor = checkImage
+	CheckFor       = checkArch
+	CheckRunningAt = checkRunningAt
+	CheckFileFor   = checkImage
 )
 
 // Requirements returns what a kernel booted with cmdline on goarch needs.

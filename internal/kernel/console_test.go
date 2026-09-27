@@ -1,4 +1,4 @@
-package kernelcheck_test
+package kernel_test
 
 import (
 	"os"
@@ -6,14 +6,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/hich-hich/cove/internal/kernelcheck"
+	"gitlab.com/hich-hich/cove/internal/kernel"
 )
 
 // killInit is the panic of a kernel whose init exited with status 2, which a Go program that
 // throws does.
 const killInit = "Kernel panic - not syncing: Attempted to kill init! exitcode=0x00000200\n"
 
-func TestFromConsoleNamesWhatTheConsoleShows(t *testing.T) {
+func TestCheckConsoleNamesWhatTheConsoleShows(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -29,11 +29,11 @@ func TestFromConsoleNamesWhatTheConsoleShows(t *testing.T) {
 		console, err := os.ReadFile(tc.fixture)
 		require.NoError(t, err, tc.name)
 		console = append(console, tc.after...)
-		require.Equal(t, []string{tc.want}, missingOf(t, kernelcheck.FromConsole(console)), tc.name)
+		require.Equal(t, []string{tc.want}, missingOf(t, kernel.CheckConsole(console)), tc.name)
 	}
 }
 
-func TestFromConsoleReadsTheOtherPanicsOfAnInitThatDoesNotRun(t *testing.T) {
+func TestCheckConsoleReadsTheOtherPanicsOfAnInitThatDoesNotRun(t *testing.T) {
 	t.Parallel()
 
 	for console, want := range map[string]string{
@@ -48,11 +48,11 @@ func TestFromConsoleReadsTheOtherPanicsOfAnInitThatDoesNotRun(t *testing.T) {
 		// runtime spins, and this line comes only at the first wake of a parked thread.
 		"futexwakeup addr=0x21cb60 returned -38\nSIGSEGV: segmentation violation\n" + killInit: futex,
 	} {
-		require.Equal(t, []string{want}, missingOf(t, kernelcheck.FromConsole([]byte(console))), console)
+		require.Equal(t, []string{want}, missingOf(t, kernel.CheckConsole([]byte(console))), console)
 	}
 }
 
-func TestFromConsoleCountsASignOnlyBeforeThePanicItEndsIn(t *testing.T) {
+func TestCheckConsoleCountsASignOnlyBeforeThePanicItEndsIn(t *testing.T) {
 	t.Parallel()
 
 	for _, console := range []string{
@@ -70,6 +70,6 @@ func TestFromConsoleCountsASignOnlyBeforeThePanicItEndsIn(t *testing.T) {
 		"runtime: epollcreate failed with 24\n" + killInit,
 		"",
 	} {
-		require.NoError(t, kernelcheck.FromConsole([]byte(console)), console)
+		require.NoError(t, kernel.CheckConsole([]byte(console)), console)
 	}
 }
