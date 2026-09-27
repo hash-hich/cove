@@ -1,7 +1,8 @@
 // Package sandbox creates a sandbox: it lays out the files of the sandbox on the host, the write
 // disk, the initramfs of the run and the console, and hands cove-vmm the paths of the files the VM
 // needs through vmmlaunch. It returns once the init of the guest says the image is mounted, or
-// with what the console said when the VM ended before.
+// with what the console said when the VM ended before. It stops a sandbox too, through its init,
+// and removes it when run was asked to.
 //
 // It assembles the packages that do each job, in order, and does none of that work itself.
 package sandbox
@@ -20,6 +21,7 @@ import (
 	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/inventory"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
+	"gitlab.com/hich-hich/cove/internal/vminit/control"
 	"gitlab.com/hich-hich/cove/internal/vminit/initramfs"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmlaunch"
@@ -42,6 +44,10 @@ const (
 	vmmLogFile    = "vmm.log"
 	// removeFile marks a sandbox that goes when its VM is stopped, as run --rm asks.
 	removeFile = "remove"
+	// controlFile is the socket cove-vmm listens on for the init, and processFile names that
+	// cove-vmm, for a stop to reach the init and, when the init does not end the VM, to kill it.
+	controlFile = "control.sock"
+	processFile = "vmm.json"
 )
 
 // cmdline is the command line of the kernel: the console libkrun gives, the init of the initramfs,
@@ -126,6 +132,10 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 	if err != nil {
 		return nil, withConsole(err, dir)
 	}
+	if err := writeProcess(dir, vm); err != nil {
+		vm.Kill()
+		return nil, withConsole(err, dir)
+	}
 	if err := waitReady(ctx, vm, vmReq.Console); err != nil {
 		vm.Kill()
 		return nil, withConsole(err, dir)
@@ -158,6 +168,7 @@ func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Reques
 		CPUs: req.CPUs, MemoryMiB: req.MemoryMiB, Cmdline: cmdline,
 		Kernel: filepath.Join(libexec, kernelFile), KernelFormat: kernelFormat(),
 		Initramfs: filepath.Join(dir, initramfsFile), Console: filepath.Join(dir, consoleFile),
+		Vsock: []vmmproto.VsockPort{{Port: control.Port, Socket: filepath.Join(dir, controlFile)}},
 	}
 	if req.Remove {
 		if err := os.WriteFile(filepath.Join(dir, removeFile), nil, 0o600); err != nil {
