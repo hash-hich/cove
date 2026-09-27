@@ -219,6 +219,20 @@ func (vm *VM) failed(err error) error {
 // Pid returns the process of cove-vmm.
 func (vm *VM) Pid() int { return vm.cmd.Process.Pid }
 
+// Process returns what names the cove-vmm of vm for good, to be killed later by another cove.
+func (vm *VM) Process() (Process, error) {
+	started, ok, err := startTime(vm.Pid())
+	if err == nil && !ok {
+		// A process gone from the table was reaped, so how it exited is known.
+		<-vm.done
+		err = fmt.Errorf("%s %d ended", Program, vm.Pid())
+		if vm.err != nil {
+			err = fmt.Errorf("%w: %w", err, vm.err)
+		}
+	}
+	return Process{PID: vm.Pid(), Started: started}, err
+}
+
 // Done is closed when cove-vmm has exited, while the process that started it is still there to
 // see it.
 func (vm *VM) Done() <-chan struct{} { return vm.done }
