@@ -6,6 +6,7 @@ hand it its run. The packages are split by where they run.
 | Package | Runs on | What it holds |
 |---|---|---|
 | [spec](spec/) | host and VM | `run.json`, the description of a run the host writes and the init reads |
+| [control](control/) | host and VM | the vsock port the init listens on, and the stop the host sends through it |
 | [initramfs](initramfs/) | host | the archive the kernel boots the init from, with `run.json` |
 | [boot](boot/) | VM | the init itself, from the first mount to the power off |
 | [launch](launch/) | VM | the processes of the image, in the mount namespace of the agent |

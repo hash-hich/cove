@@ -18,7 +18,7 @@ import (
 )
 
 // StopGrace is how long a process has to end once it has been sent its stop signal, before it is
-// killed, as docker gives it.
+// killed, as docker gives it, when the stop comes with no grace of its own.
 const StopGrace = 10 * time.Second
 
 // Launcher starts processes in the mount namespace of the agent, whose root is the root of the
@@ -262,20 +262,89 @@ func (p *Process) Signal(sig syscall.Signal) error {
 	return nil
 }
 
-// Stop sends sig to the process, then SIGKILL if it is still running StopGrace later, and returns
-// its exit code.
-func (p *Process) Stop(sig syscall.Signal) (int, error) {
-	if err := p.Signal(sig); err != nil {
-		return 0, err
+// StopAll sends sig to every process but the init, then SIGKILL to those still running grace
+// later, and returns once none is left, or with how many a SIGKILL did not end within killWait: a
+// process asleep on a disk that no longer answers outlives even SIGKILL.
+func StopAll(sig syscall.Signal, grace time.Duration) error {
+	// kill(-1) from PID 1 reaches every process but the init itself, those of the image whatever
+	// session or namespace they made for themselves.
+	if err := unix.Kill(-1, sig); err != nil && !errors.Is(err, unix.ESRCH) {
+		return fmt.Errorf("send %v to the processes: %w", sig, err)
 	}
-	select {
-	case <-p.exited:
-	case <-time.After(StopGrace):
-		if err := p.Signal(unix.SIGKILL); err != nil {
-			return 0, err
+	if n, err := endWithin(grace); err != nil || n == 0 {
+		return err
+	}
+	if err := unix.Kill(-1, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
+		return fmt.Errorf("kill the processes: %w", err)
+	}
+	n, err := endWithin(killWait)
+	if err == nil && n > 0 {
+		err = fmt.Errorf("%d processes still running after SIGKILL", n)
+	}
+	return err
+}
+
+// killWait bounds the wait for the processes a SIGKILL was sent to.
+const killWait = 5 * time.Second
+
+// endWithin waits up to d for every process but the init to end, and returns how many are left.
+func endWithin(d time.Duration) (int, error) {
+	deadline := time.Now().Add(d)
+	for {
+		n, err := running()
+		if err != nil || n == 0 || !time.Now().Before(deadline) {
+			return n, err
+		}
+		time.Sleep(pollInterval)
+	}
+}
+
+// pollInterval is how often the processes are counted while they end.
+const pollInterval = 50 * time.Millisecond
+
+// pfKthread is the flag of a kernel thread in /proc/<pid>/stat, PF_KTHREAD of the kernel.
+const pfKthread = 0x00200000
+
+// running returns how many processes are running, the init, the kernel threads and the zombies the
+// reaper has yet to collect left out.
+func running() (int, error) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, fmt.Errorf("list the processes: %w", err)
+	}
+	n := 0
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid == 1 {
+			continue
+		}
+		stat, err := os.ReadFile("/proc/" + e.Name() + "/stat")
+		if err != nil {
+			// The process ended between the listing and the read.
+			continue
+		}
+		if counts(string(stat)) {
+			n++
 		}
 	}
-	return p.Wait(), nil
+	return n, nil
+}
+
+// counts reports whether the process of stat, a /proc/<pid>/stat, is one that must end: not a
+// kernel thread and not a zombie. The name, in parentheses, may hold spaces and parentheses, so
+// the fields are read after the last one.
+func counts(stat string) bool {
+	i := strings.LastIndexByte(stat, ')')
+	if i < 0 {
+		return false
+	}
+	// After the name: state, ppid, pgrp, session, tty_nr, tpgid, flags.
+	fields := strings.Fields(stat[i+1:])
+	if len(fields) < 7 || fields[0] == "Z" {
+		return false
+	}
+	flags, err := strconv.ParseUint(fields[6], 10, 64)
+	return err == nil && flags&pfKthread == 0
 }
 
 // Resize gives the terminal of the process rows lines of cols columns.

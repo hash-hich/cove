@@ -5,15 +5,17 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/signal"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 
 	"gitlab.com/hich-hich/cove/internal/kernel"
+	"gitlab.com/hich-hich/cove/internal/vminit/control"
 	"gitlab.com/hich-hich/cove/internal/vminit/imageuser"
 	"gitlab.com/hich-hich/cove/internal/vminit/launch"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
@@ -43,7 +45,7 @@ func say(format string, args ...any) {
 }
 
 // run boots the VM, then runs the command of the description when there is one, and returns
-// when the VM should power off.
+// once the VM is stopped and its write disk closed, when it should power off.
 func run() error {
 	s, err := boot()
 	if err != nil {
@@ -57,15 +59,23 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	sig, err := launch.ParseSignal(s.StopSignal)
+	if err != nil {
+		return err //nolint:wrapcheck // The refusal names the StopSignal of the image.
+	}
+	// The host may stop the VM as soon as it is said ready, so both ways in listen before.
+	stops := make(chan stopRequest, 1)
+	notifySignals(stops)
+	if err := listenControl(stops); err != nil {
+		return err
+	}
 	say(spec.Ready)
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, unix.SIGTERM, unix.SIGINT, unix.SIGPWR)
 	if len(s.Command) == 0 {
-		<-stop
+		shutdown(sig, <-stops)
 		return nil
 	}
-	return runCommand(l, s, cmd, stop)
+	return runCommand(l, s, cmd, sig, stops)
 }
 
 // boot mounts the image root and everything under it, and returns the description of the run.
@@ -436,13 +446,11 @@ func prepare(l *launch.Launcher, s *spec.Run) (launch.Command, error) {
 	return cmd, err //nolint:wrapcheck // The function run in the root names what failed.
 }
 
-// runCommand runs the command of the description on the console, stops it with the stop signal of
-// the image when the VM is asked to stop, and writes its exit code on the console.
-func runCommand(l *launch.Launcher, s *spec.Run, cmd launch.Command, stop <-chan os.Signal) error {
-	sig, err := launch.ParseSignal(s.StopSignal)
-	if err != nil {
-		return err //nolint:wrapcheck // The refusal names the StopSignal of the image.
-	}
+// runCommand runs the command of the description on the console, and writes its exit code on the
+// console once it ended, by itself or stopped with the rest of the VM.
+func runCommand(
+	l *launch.Launcher, s *spec.Run, cmd launch.Command, sig syscall.Signal, stops <-chan stopRequest,
+) error {
 	cmd.Args = s.Command
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	p, err := l.Start(cmd)
@@ -451,14 +459,24 @@ func runCommand(l *launch.Launcher, s *spec.Run, cmd launch.Command, stop <-chan
 	}
 	exited := make(chan int, 1)
 	go func() { exited <- p.Wait() }()
-	var code int
 	select {
-	case code = <-exited:
-	case <-stop:
-		if code, err = p.Stop(sig); err != nil {
-			return err //nolint:wrapcheck // Stop names the process.
+	case code := <-exited:
+		say("exit %d", code)
+		// What the command left running is stopped as a stop would.
+		shutdown(sig, stopRequest{grace: launch.StopGrace, report: func(control.Step) {}})
+	case req := <-stops:
+		shutdown(sig, req)
+		// shutdown waited for every process to end, so the command is reaped at once, or it
+		// outlived SIGKILL and the VM powers off without it.
+		select {
+		case code := <-exited:
+			say("exit %d", code)
+		case <-time.After(reapWait):
+			say("the command did not end")
 		}
 	}
-	say("exit %d", code)
 	return nil
 }
+
+// reapWait bounds the wait for the exit code of a command that shutdown saw end.
+const reapWait = time.Second
