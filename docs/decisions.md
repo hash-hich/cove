@@ -18,6 +18,30 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-27: stop asks the init over a vsock port, then kills cove-vmm
+
+**Decided.** `cove stop` sends a stop on a vsock port of the init's own,
+apart from the turns: the init sends the `StopSignal` of the image to every
+process, `SIGKILL` once the grace has passed, syncs, makes the write disk read
+only, answers each step, and powers off. `cove` waits for `cove-vmm` to end
+within `-t`, 15 s of which 5 are kept for the disk, then kills it, named by
+its pid and the time it started. `-s` is gone.
+
+**Why.** One message works under every monitor and architecture, over vsock,
+which every kernel of cove already has. The steps tell an init at work from
+one that got nothing. Read only on the superblock closes the journal under
+every mount namespace, the agent's included. The 15 s are the 10 docker gives
+a process, plus the flush. A pid is given again once its process ended.
+Nothing carries a signal of the user to the guest; the image names its own.
+
+**Rejected.** The shutdown eventfd of libkrun, a GPIO key that `gpio-keys`
+turns into `KEY_RESTART`: made for guests with `systemd-logind`, aarch64 on
+macOS only, absent from Firecracker, three more kernel options, and a key
+that returns nothing, so a kernel without them waits then kills in silence.
+Killing `cove-vmm` alone: what the guest had not flushed is lost. A socket
+under `$TMPDIR` for a path short enough: away from the sandbox it belongs to,
+where cove-vmm and cove reach it by its name instead.
+
 ## 2026-09-25: the monitor runs in cove-vmm, confined to the files of its VM
 
 **Decided.** `cove-vmm`, one process per VM beside `cove` in `libexec`, is the
@@ -26,7 +50,7 @@ only binary that links a monitor, through cgo, and the only one signed with
 `cove-vmm` their paths, absolute and with no link left; `cove-vmm` enters its
 sandbox before the monitor runs, allowed exactly these paths: reading for the
 kernel, the initramfs and the layers, writing as well for the write disk and
-the console. On macOS the sandbox is Seatbelt, `(deny default)` plus what
+the console, binding for the socket of the init. On macOS the sandbox is Seatbelt, `(deny default)` plus what
 libkrun was seen to be refused and one `literal` rule per file; a platform
 without a confinement written runs no VM. What `cove-vmm` says goes to a log
 of its own. Three messages cross a socket pair: who `cove-vmm` is, the VM,
@@ -721,13 +745,11 @@ the flags of `docker run` its role justifies (`--name`, `--rm`, `--cpus`,
 `-m`, `-e`) and no other: cove builds the argument array itself, so
 a mount, a user, a working directory, a network option, the SSH agent or a
 command cannot even be asked for. `stop` and `list` (aliases `ls`, `ps`) act
-only on VMs carrying the label `cove=sandbox`; `--all` is a filtered loop,
-never `container stop --all`; an unknown name exits 1, a cove-side failure
-125, a usage error 2. The stop delay stays the default of `container`.
+only on the sandboxes of cove's inventory, `--all` included; an unknown name
+exits 1, a cove-side failure 125, a usage error 2.
 
-**Why.** Developers reuse what they know; the VM store of `container` is
-shared with other VMs (Apple's image builder), so cove never stops what it did
-not create. The Go standard library does the dispatch and the flags: a static
+**Why.** Developers reuse what they know; the host runs VMs cove did not
+create, so cove never stops one. The Go standard library does the dispatch and the flags: a static
 binary with minimal dependencies, no cobra. Every process is started with an
 argument array, never a shell string, because a shell would interpret exactly
 the bytes cove must only transport.
