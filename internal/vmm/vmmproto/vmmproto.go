@@ -9,11 +9,12 @@
 // Firecracker behind its jailer takes nothing else, and one way to hand files is one way to confine
 // and to check.
 //
-// cove starts cove-vmm with one end of a socket pair on descriptor Pipe, the only descriptor it
-// inherits past the standard streams. Three JSON messages follow, one each way then one back: cove-vmm says
-// who it is in a Hello, cove describes the VM in a Boot, and cove-vmm answers with a Status once
-// the VMM holds the VM, before it starts it. A cove-vmm of another build than cove is refused on
-// its Hello, since the two change together.
+// cove starts cove-vmm with one end of a socket pair on descriptor Pipe and the lock of the
+// sandbox on descriptor Lock, the only descriptors it inherits past the standard streams. Three
+// JSON messages follow, one each way then one back: cove-vmm says who it is in a Hello, cove
+// describes the VM in a Boot, and cove-vmm answers with a Status once the VMM holds the VM, before
+// it starts it. A cove-vmm of another build than cove is refused on its Hello, since the two
+// change together.
 package vmmproto
 
 import (
@@ -25,6 +26,10 @@ import (
 // Pipe is the descriptor of the socket cove-vmm talks to cove on, the first after the standard
 // streams.
 const Pipe = 3
+
+// Lock is the descriptor of the file whose lock cove-vmm holds for cove by living: it never
+// touches it, and the kernel releases the lock when cove-vmm ends.
+const Lock = 4
 
 // build names the build of cove this binary comes from, set by the linker when make builds cove
 // and cove-vmm together; empty when go builds one alone.

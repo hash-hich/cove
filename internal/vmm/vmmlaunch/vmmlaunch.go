@@ -63,6 +63,10 @@ type Request struct {
 	// Log receives what cove-vmm itself says, on its standard output and error. It is a file of its
 	// own: the monitor empties the console as it opens it, and would write over it.
 	Log *os.File
+	// Lock, when not nil, is a file under a lock of flock that cove-vmm inherits on vmmproto.Lock
+	// and never touches: the lock is held for as long as cove-vmm lives, and the kernel releases it
+	// when it ends, by whatever means, which is how cove tells a VM that runs from one that ended.
+	Lock *os.File
 }
 
 // VM is a cove-vmm that holds a VM.
@@ -97,7 +101,11 @@ func Start(ctx context.Context, dir string, req Request) (*VM, error) {
 	cmd.Dir = "/"
 	cmd.Env = []string{}
 	cmd.Stdout, cmd.Stderr = req.Log, req.Log
+	// ExtraFiles puts its first file on descriptor 3, vmmproto.Pipe, and the next on vmmproto.Lock.
 	cmd.ExtraFiles = []*os.File{theirs}
+	if req.Lock != nil {
+		cmd.ExtraFiles = append(cmd.ExtraFiles, req.Lock)
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	err = cmd.Start()
 	_ = theirs.Close()
