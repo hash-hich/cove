@@ -6,7 +6,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/hich-hich/cove/internal/emptyext4"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 )
 
@@ -76,6 +75,6 @@ func TestFreeReadsTheFileSystemOfTheDirectory(t *testing.T) {
 func TestEverySizeHasAnEmptyExt4(t *testing.T) {
 	t.Parallel()
 	for _, s := range rwdisk.Sizes {
-		require.NoError(t, emptyext4.Write(filepath.Join(t.TempDir(), "rw.ext4"), int64(s)), s.String())
+		require.NoError(t, rwdisk.Create(filepath.Join(t.TempDir(), "rw.ext4"), s), s.String())
 	}
 }

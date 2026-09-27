@@ -1,5 +1,5 @@
 // Command mkemptyext4 makes the empty ext4 file systems cove copies its write disks from, one per
-// size a run can ask for, and writes them in ../../internal/emptyext4/generated with their
+// size a run can ask for, and writes them in ../../internal/rwdisk/generated with their
 // SHA256SUMS. make emptyext4 runs it in the image of the Dockerfile next to it.
 //
 // It runs mkfs.ext4 on a sparse file of each size, then keeps only the blocks that are not zero:
@@ -53,7 +53,7 @@ const headSize = len(magic) + 8
 const recordHead = 12
 
 // out is where cove embeds the empty ext4, from the directory of this command.
-const out = "../../internal/emptyext4/generated"
+const out = "../../internal/rwdisk/generated"
 
 // sums names the file of the fingerprints of what is written in out, in the format of sha256sum.
 const sums = "SHA256SUMS"

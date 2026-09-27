@@ -1,6 +1,5 @@
-// Package rwdisk decides the size of the disk a run writes on: the upper of the image root and
-// the volumes, one ext4 file system of a size fixed when the sandbox is created. The disk itself
-// is written by internal/emptyext4, which holds an empty ext4 of each of Sizes.
+// Package rwdisk sizes and creates the disk a run writes on: the upper of the image root and the
+// volumes, one ext4 file system of a size fixed when the sandbox is created.
 //
 // The file of the disk is sparse, so the host pays for what the run writes, never for the size it
 // was allowed.

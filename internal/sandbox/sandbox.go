@@ -17,7 +17,6 @@ import (
 	"slices"
 	"time"
 
-	"gitlab.com/hich-hich/cove/internal/emptyext4"
 	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/vminit/initramfs"
@@ -141,8 +140,8 @@ func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Reques
 		vm.Disks = append(vm.Disks, vmmproto.Disk{Path: l.Path, ReadOnly: true})
 	}
 	disk := filepath.Join(dir, writeDiskFile)
-	if err := emptyext4.Write(disk, int64(size)); err != nil {
-		return vm, err //nolint:wrapcheck // Write names the disk.
+	if err := rwdisk.Create(disk, size); err != nil {
+		return vm, err //nolint:wrapcheck // Create names the disk.
 	}
 	vm.Disks = append(vm.Disks, vmmproto.Disk{Path: disk})
 	run, err := describe(req, size)

@@ -1,4 +1,4 @@
-package emptyext4
+package rwdisk
 
 import "io/fs"
 

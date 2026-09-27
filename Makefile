@@ -101,7 +101,7 @@ test:
 ## check: what a commit must pass, lint then test
 check: lint test
 
-## emptyext4: make again the empty ext4 of internal/emptyext4/generated and their SHA256SUMS
+## emptyext4: make again the empty ext4 of internal/rwdisk/generated and their SHA256SUMS
 emptyext4: mkemptyext4-docker-image
 	$(MKEMPTYEXT4) go run .
 

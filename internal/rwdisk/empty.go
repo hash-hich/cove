@@ -1,5 +1,4 @@
-// Package emptyext4 holds the empty ext4 file systems a write disk starts from, one per size a run
-// can ask for, and writes one into a sparse file.
+// A write disk starts from an empty ext4, one per size of Sizes.
 //
 // An empty ext4 is formatted once, outside cove, by tools/mkemptyext4, and kept here as its blocks
 // that are not zero: a few megabytes, whatever the size, where the file system itself is up to a
@@ -11,7 +10,8 @@
 // Format of generated/<size>.gz: a gzip stream of the magic cove-rw1, the size as a big endian uint64, then
 // one record per run of blocks that are not zero, in increasing order of offset, each its offset
 // as a big endian uint64, its length as a big endian uint32, and its bytes.
-package emptyext4
+
+package rwdisk
 
 import (
 	"bufio"
@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"syscall"
 )
 
@@ -42,35 +41,21 @@ const maxRecord = 1 << 20
 // recordHead is the size of the offset and the length that open a record.
 const recordHead = 12
 
-// The units of a size, in powers of two as docker run -m counts them.
-const (
-	gib = 1 << 30
-	tib = 1 << 40
-)
-
 // errNotSparse is the refusal of a file system that keeps no sparse files, where a write disk
 // would take its whole size on the host at once.
 var errNotSparse = errors.New("the file system keeps no sparse files")
 
-// name returns the name of the empty ext4 of size, 64g or 1t.
-func name(size int64) string {
-	if size >= tib && size%tib == 0 {
-		return strconv.FormatInt(size/tib, 10) + "t"
-	}
-	return strconv.FormatInt(size/gib, 10) + "g"
-}
-
-// Write writes at path the empty ext4 of size bytes: its blocks at their offsets, then the rest
-// as a hole. It fails when there is no empty ext4 of that size, when path exists, and when the
-// file system of path keeps no sparse files, where the file would take its whole size on the
-// host at once; what it wrote is removed when it fails.
-func Write(path string, size int64) (err error) {
+// Create creates at path the write disk of size, from its empty ext4: the blocks of that ext4 at
+// their offsets, then the rest as a hole. It fails when there is no empty ext4 of that size, when
+// path exists, and when the file system of path keeps no sparse files, where the file would take
+// its whole size on the host at once; what it wrote is removed when it fails.
+func Create(path string, size Size) (err error) {
 	if size%gib != 0 {
 		return fmt.Errorf("there is no empty ext4 of %d bytes", size)
 	}
-	src, err := files.Open("generated/" + name(size) + ".gz")
+	src, err := files.Open("generated/" + size.String() + ".gz")
 	if err != nil {
-		return fmt.Errorf("there is no empty ext4 of %s: %w", name(size), err)
+		return fmt.Errorf("there is no empty ext4 of %s: %w", size, err)
 	}
 	defer func() { _ = src.Close() }()
 	//nolint:gosec // G304: path is the disk of the sandbox cove creates.
@@ -86,14 +71,14 @@ func Write(path string, size int64) (err error) {
 			_ = os.Remove(path)
 		}
 	}()
-	written, err := decode(src, size, func(off int64, b []byte) error {
+	written, err := decode(src, int64(size), func(off int64, b []byte) error {
 		_, err := f.WriteAt(b, off)
 		return err //nolint:wrapcheck // The caller names the disk.
 	})
 	if err != nil {
 		return fmt.Errorf("write the write disk %s: %w", path, err)
 	}
-	if err := f.Truncate(size); err != nil {
+	if err := f.Truncate(int64(size)); err != nil {
 		return fmt.Errorf("size the write disk %s: %w", path, err)
 	}
 	return checkSparse(f, path, size, written)
@@ -101,7 +86,7 @@ func Write(path string, size int64) (err error) {
 
 // checkSparse refuses the file f when the host gave it much more than the bytes written, which is
 // what a file system without sparse files does with the ftruncate.
-func checkSparse(f *os.File, path string, size, written int64) error {
+func checkSparse(f *os.File, path string, size Size, written int64) error {
 	fi, err := f.Stat()
 	if err != nil {
 		return fmt.Errorf("read the write disk %s: %w", path, err)
@@ -113,7 +98,7 @@ func checkSparse(f *os.File, path string, size, written int64) error {
 	// The host allocates in blocks of its own, so the slack is generous: a file system without
 	// holes gives the whole size, never twice what was written.
 	if allocated := st.Blocks * 512; allocated > 2*written+maxRecord {
-		return fmt.Errorf("the write disk %s of %s takes %d bytes on the host: %w", path, name(size), allocated, errNotSparse)
+		return fmt.Errorf("the write disk %s of %s takes %d bytes on the host: %w", path, size, allocated, errNotSparse)
 	}
 	return nil
 }

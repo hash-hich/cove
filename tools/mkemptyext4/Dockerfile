@@ -1,4 +1,4 @@
-# The environment mkemptyext4 runs in: Go and the e2fsprogs whose bytes internal/emptyext4/generated
+# The environment mkemptyext4 runs in: Go and the e2fsprogs whose bytes internal/rwdisk/generated
 # holds. The Makefile runs it: make emptyext4 makes them again, make emptyext4-check compares them
 # with the committed SHA256SUMS. A line that changes while the command of mkfs and the version of
 # e2fsprogs did not says the making is not reproducible.
