@@ -102,9 +102,10 @@ type Command struct {
 	// Dir is the working directory, a path of the image.
 	Dir      string
 	Identity imageuser.Identity
-	// TTY gives the process a terminal, whose other side is Process.Terminal. Stdin, Stdout and
-	// Stderr are its standard streams otherwise.
+	// TTY gives the process a terminal, whose other side is Process.Terminal, Rows lines of Cols
+	// columns when they are set. Stdin, Stdout and Stderr are its standard streams otherwise.
 	TTY                   bool
+	Rows, Cols            uint16
 	Stdin, Stdout, Stderr *os.File
 }
 
@@ -115,7 +116,7 @@ type Process struct {
 	Terminal *os.File
 	l        *Launcher
 	exited   chan struct{}
-	code     int
+	status   unix.WaitStatus
 }
 
 // Start starts c in the namespace of the agent. The process is the leader of a session of its
@@ -145,7 +146,7 @@ func (l *Launcher) fork(c Command) (*Process, error) {
 	var files []uintptr
 	var terminal *os.File
 	if c.TTY {
-		t, err := openPTY(c.Identity.UID)
+		t, err := openPTY(c.Identity.UID, c.Rows, c.Cols)
 		if err != nil {
 			return nil, err
 		}
@@ -178,9 +179,11 @@ type pty struct {
 	terminal, process *os.File
 }
 
-// openPTY opens a terminal in the devpts of the image, its side for the process owned by uid.
-func openPTY(uid uint32) (pty, error) {
-	m, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+// openPTY opens a terminal in the devpts of the image, its side for the process owned by uid, rows
+// lines of cols columns when both are set. The other side is non blocking, so that the runtime
+// polls it: closing it then ends a read under way, which is how a terminal is hung up.
+func openPTY(uid uint32, rows, cols uint16) (pty, error) {
+	m, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return pty{}, fmt.Errorf("open a terminal: %w", err)
 	}
@@ -205,6 +208,13 @@ func openPTY(uid uint32) (pty, error) {
 		_ = terminal.Close()
 		return pty{}, fmt.Errorf("give %s to its user: %w", name, err)
 	}
+	if rows != 0 && cols != 0 {
+		if err := unix.IoctlSetWinsize(s, unix.TIOCSWINSZ, &unix.Winsize{Row: rows, Col: cols}); err != nil {
+			_ = unix.Close(s)
+			_ = terminal.Close()
+			return pty{}, fmt.Errorf("size %s: %w", name, err)
+		}
+	}
 	return pty{terminal: terminal, process: os.NewFile(uintptr(s), name)}, nil
 }
 
@@ -225,7 +235,7 @@ func (l *Launcher) reap() {
 		}
 		if p, ok := l.waiting[pid]; ok {
 			delete(l.waiting, pid)
-			p.code = exitCode(ws)
+			p.status = ws
 			close(p.exited)
 		}
 		l.mu.Unlock()
@@ -244,7 +254,22 @@ func exitCode(ws unix.WaitStatus) int {
 // ended it.
 func (p *Process) Wait() int {
 	<-p.exited
-	return p.code
+	return exitCode(p.status)
+}
+
+// Done is closed once the process has ended.
+func (p *Process) Done() <-chan struct{} {
+	return p.exited
+}
+
+// Status waits for the process to end, and returns its exit code, or the signal that ended it and
+// -1.
+func (p *Process) Status() (int, syscall.Signal) {
+	<-p.exited
+	if p.status.Signaled() {
+		return -1, p.status.Signal()
+	}
+	return p.status.ExitStatus(), 0
 }
 
 // Signal sends sig to the process, and does nothing once it has ended.
@@ -263,7 +288,7 @@ func (p *Process) Signal(sig syscall.Signal) error {
 }
 
 // StopAll sends sig to every process but the init, then SIGKILL to those still running grace
-// later, and returns once none is left, or with how many a SIGKILL did not end within killWait: a
+// later, and returns once none is left, or with how many a SIGKILL did not end within KillWait: a
 // process asleep on a disk that no longer answers outlives even SIGKILL.
 func StopAll(sig syscall.Signal, grace time.Duration) error {
 	// kill(-1) from PID 1 reaches every process but the init itself, those of the image whatever
@@ -277,15 +302,15 @@ func StopAll(sig syscall.Signal, grace time.Duration) error {
 	if err := unix.Kill(-1, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
 		return fmt.Errorf("kill the processes: %w", err)
 	}
-	n, err := endWithin(killWait)
+	n, err := endWithin(KillWait)
 	if err == nil && n > 0 {
 		err = fmt.Errorf("%d processes still running after SIGKILL", n)
 	}
 	return err
 }
 
-// killWait bounds the wait for the processes a SIGKILL was sent to.
-const killWait = 5 * time.Second
+// KillWait bounds the wait for the processes a SIGKILL was sent to.
+const KillWait = 5 * time.Second
 
 // endWithin waits up to d for every process but the init to end, and returns how many are left.
 func endWithin(d time.Duration) (int, error) {
@@ -347,13 +372,64 @@ func counts(stat string) bool {
 	return err == nil && flags&pfKthread == 0
 }
 
+// KillSession sends SIGKILL to every process of the session sid, those that made a process group
+// of their own included, and returns once it was sent.
+func KillSession(sid int) error {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return fmt.Errorf("list the processes: %w", err)
+	}
+	for _, e := range entries {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid == 1 {
+			continue
+		}
+		stat, err := os.ReadFile("/proc/" + e.Name() + "/stat")
+		if err != nil {
+			continue
+		}
+		if s, ok := session(string(stat)); ok && s == sid {
+			if err := unix.Kill(pid, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
+				return fmt.Errorf("kill process %d: %w", pid, err)
+			}
+		}
+	}
+	return nil
+}
+
+// session returns the session of the process of stat, a /proc/<pid>/stat.
+func session(stat string) (int, bool) {
+	i := strings.LastIndexByte(stat, ')')
+	if i < 0 {
+		return 0, false
+	}
+	// After the name: state, ppid, pgrp, session.
+	fields := strings.Fields(stat[i+1:])
+	if len(fields) < 4 {
+		return 0, false
+	}
+	sid, err := strconv.Atoi(fields[3])
+	return sid, err == nil
+}
+
 // Resize gives the terminal of the process rows lines of cols columns.
 func (p *Process) Resize(rows, cols uint16) error {
 	if p.Terminal == nil {
 		return errors.New("the process has no terminal")
 	}
+	// Through SyscallConn and not Fd: Fd puts the file back in blocking mode, and a Close would
+	// then no longer end the read under way, which a hang up counts on.
+	rc, err := p.Terminal.SyscallConn()
+	if err != nil {
+		return fmt.Errorf("resize the terminal: %w", err)
+	}
 	ws := &unix.Winsize{Row: rows, Col: cols}
-	if err := unix.IoctlSetWinsize(int(p.Terminal.Fd()), unix.TIOCSWINSZ, ws); err != nil {
+	if cerr := rc.Control(func(fd uintptr) {
+		err = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, ws)
+	}); cerr != nil {
+		err = cerr
+	}
+	if err != nil {
 		return fmt.Errorf("resize the terminal: %w", err)
 	}
 	return nil

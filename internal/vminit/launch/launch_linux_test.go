@@ -49,3 +49,27 @@ func TestCounts(t *testing.T) {
 		})
 	}
 }
+
+func TestSession(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		stat   string
+		want   int
+		wantOK bool
+	}{
+		{name: "leader", stat: "42 (claude) S 1 42 42 34816 42 4194560", want: 42, wantOK: true},
+		{name: "a group of its own", stat: "57 (git) S 42 57 42 34816 42 4194560", want: 42, wantOK: true},
+		{name: "name with spaces and parentheses", stat: "57 (a) b (c) R 42 57 42 0", want: 42, wantOK: true},
+		{name: "truncated", stat: "57 (git) S 42 57"},
+		{name: "no name", stat: "57 git S 42 57 42"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := launch.Session(tt.stat)
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
