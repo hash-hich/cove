@@ -47,7 +47,7 @@ func stopCommand(a *App, args []string) int {
 		_, _ = fmt.Fprintf(a.Stderr, "cove stop: %v\n", err)
 		return ExitPreflight
 	}
-	targets, ok := resolve(a, entries, spec.Targets, all)
+	targets, ok := resolve(a, "stop", entries, spec.Targets, all)
 	if !stopAll(ctx, a, root, targets, spec.Timeout) {
 		ok = false
 	}
@@ -60,16 +60,17 @@ func stopCommand(a *App, args []string) int {
 	return 0
 }
 
-// target is a sandbox to stop, and how the command line named it, which is what stop prints.
+// target is a sandbox a verb acts on, and how the command line named it, which is what the verb
+// prints.
 type target struct {
 	named string
 	entry inventory.Entry
 }
 
 // resolve returns the sandboxes of entries that names designate, or the running ones with all, and
-// whether every name was found. What a name does not find is said on stderr. A sandbox named twice
-// is stopped once.
-func resolve(a *App, entries []inventory.Entry, names []string, all bool) ([]target, bool) {
+// whether every name was found. What a name does not find is said on stderr, as an error of verb. A
+// sandbox named twice is returned once.
+func resolve(a *App, verb string, entries []inventory.Entry, names []string, all bool) ([]target, bool) {
 	var targets []target
 	if all {
 		for _, e := range entries {
@@ -84,7 +85,7 @@ func resolve(a *App, entries []inventory.Entry, names []string, all bool) ([]tar
 	for _, n := range names {
 		e, err := inventory.Find(entries, n)
 		if err != nil {
-			_, _ = fmt.Fprintf(a.Stderr, "cove stop: %v\n", err)
+			_, _ = fmt.Fprintf(a.Stderr, "cove %s: %v\n", verb, err)
 			ok = false
 			continue
 		}
