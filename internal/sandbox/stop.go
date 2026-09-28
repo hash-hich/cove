@@ -128,7 +128,7 @@ func ask(dir string, timeout time.Duration, st *Stopped) (func(ended bool), erro
 	if err != nil {
 		return nil, err
 	}
-	if err := control.Send(conn, control.Stop{Grace: max(0, timeout-FlushTime)}); err != nil {
+	if err := control.Send(conn, control.Request{Stop: &control.Stop{Grace: max(0, timeout-FlushTime)}}); err != nil {
 		_ = conn.Close()
 		return nil, err //nolint:wrapcheck // Send names the message.
 	}

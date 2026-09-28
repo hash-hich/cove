@@ -19,6 +19,7 @@ import (
 	"gitlab.com/hich-hich/cove/internal/vminit/imageuser"
 	"gitlab.com/hich-hich/cove/internal/vminit/launch"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
+	"gitlab.com/hich-hich/cove/internal/vminit/turn"
 )
 
 // rootMount is the root of the image in the initramfs, the overlay of the layers and the upper.
@@ -55,27 +56,32 @@ func run() error {
 	if err != nil {
 		return err //nolint:wrapcheck // New names the step that failed.
 	}
-	cmd, err := prepare(l, s)
+	cmd, ttyEnv, err := prepare(l, s)
 	if err != nil {
 		return err
 	}
+	ts := newTurns(l, cmd, ttyEnv)
 	sig, err := launch.ParseSignal(s.StopSignal)
 	if err != nil {
 		return err //nolint:wrapcheck // The refusal names the StopSignal of the image.
 	}
-	// The host may stop the VM as soon as it is said ready, so both ways in listen before.
+	// The host may stop the VM or send a turn as soon as it is said ready, so every way in
+	// listens before.
 	stops := make(chan stopRequest, 1)
 	notifySignals(stops)
-	if err := listenControl(stops); err != nil {
+	if err := listenControl(stops, ts); err != nil {
+		return err
+	}
+	if err := listen(turn.Port, "turn", ts.serve); err != nil {
 		return err
 	}
 	say(spec.Ready)
 
 	if len(s.Command) == 0 {
-		shutdown(sig, <-stops)
+		shutdown(sig, <-stops, ts)
 		return nil
 	}
-	return runCommand(l, s, cmd, sig, stops)
+	return runCommand(l, s, cmd, sig, stops, ts)
 }
 
 // boot mounts the image root and everything under it, and returns the description of the run.
@@ -415,9 +421,13 @@ func loopbackUp() error {
 }
 
 // prepare checks, in the root of the image, what a turn will need, and creates the directory of
-// the project. It returns the process a turn starts from, less its command line.
-func prepare(l *launch.Launcher, s *spec.Run) (launch.Command, error) {
-	var cmd launch.Command
+// the project. It returns the process a turn starts from, less its command line, and its
+// environment on a terminal.
+func prepare(l *launch.Launcher, s *spec.Run) (launch.Command, []string, error) {
+	var (
+		cmd    launch.Command
+		ttyEnv []string
+	)
 	err := l.InRoot(func() error {
 		id, err := imageuser.ResolveIn("/", s.User)
 		if err != nil {
@@ -441,15 +451,16 @@ func prepare(l *launch.Launcher, s *spec.Run) (launch.Command, error) {
 			return fmt.Errorf("give %s to the user of the image: %w", project, err)
 		}
 		cmd = launch.Command{Env: env, Dir: project, Identity: id}
+		ttyEnv = launch.Environ(s.Env, id.Home, s.Hostname, true)
 		return nil
 	})
-	return cmd, err //nolint:wrapcheck // The function run in the root names what failed.
+	return cmd, ttyEnv, err //nolint:wrapcheck // The function run in the root names what failed.
 }
 
 // runCommand runs the command of the description on the console, and writes its exit code on the
 // console once it ended, by itself or stopped with the rest of the VM.
 func runCommand(
-	l *launch.Launcher, s *spec.Run, cmd launch.Command, sig syscall.Signal, stops <-chan stopRequest,
+	l *launch.Launcher, s *spec.Run, cmd launch.Command, sig syscall.Signal, stops <-chan stopRequest, ts *turns,
 ) error {
 	cmd.Args = s.Command
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -463,9 +474,9 @@ func runCommand(
 	case code := <-exited:
 		say("exit %d", code)
 		// What the command left running is stopped as a stop would.
-		shutdown(sig, stopRequest{grace: launch.StopGrace, report: func(control.Step) {}})
+		shutdown(sig, stopRequest{grace: launch.StopGrace, report: func(control.Step) {}}, ts)
 	case req := <-stops:
-		shutdown(sig, req)
+		shutdown(sig, req, ts)
 		// shutdown waited for every process to end, so the command is reaped at once, or it
 		// outlived SIGKILL and the VM powers off without it.
 		select {

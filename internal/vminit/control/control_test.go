@@ -16,14 +16,15 @@ func TestExchange(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	require.NoError(t, control.Send(&buf, control.Stop{Grace: 10 * time.Second}))
+	require.NoError(t, control.Send(&buf, control.Request{Stop: &control.Stop{Grace: 10 * time.Second}}))
 	require.NoError(t, control.Send(&buf, control.Step{Name: control.Received}))
 	require.NoError(t, control.Send(&buf, control.Step{Name: control.ReadOnly, Error: "busy"}))
 
 	r := control.NewReceiver(&buf)
-	var stop control.Stop
-	require.NoError(t, r.Receive(&stop))
-	require.Equal(t, 10*time.Second, stop.Grace)
+	var req control.Request
+	require.NoError(t, r.Receive(&req))
+	require.Nil(t, req.Cancel)
+	require.Equal(t, 10*time.Second, req.Stop.Grace)
 	for _, want := range []control.Step{{Name: control.Received}, {Name: control.ReadOnly, Error: "busy"}} {
 		var step control.Step
 		require.NoError(t, r.Receive(&step))
@@ -35,7 +36,7 @@ func TestExchange(t *testing.T) {
 func TestReceiveRefusesAnUnknownField(t *testing.T) {
 	t.Parallel()
 
-	r := control.NewReceiver(strings.NewReader(`{"grace":1,"signal":"SIGKILL"}` + "\n"))
+	r := control.NewReceiver(strings.NewReader(`{"stop":{"grace":1,"signal":"SIGKILL"}}` + "\n"))
 
-	require.ErrorContains(t, r.Receive(&control.Stop{}), "unknown field")
+	require.ErrorContains(t, r.Receive(&control.Request{}), "unknown field")
 }

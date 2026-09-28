@@ -24,6 +24,7 @@ import (
 	"gitlab.com/hich-hich/cove/internal/vminit/control"
 	"gitlab.com/hich-hich/cove/internal/vminit/initramfs"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
+	"gitlab.com/hich-hich/cove/internal/vminit/turn"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmlaunch"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmproto"
 )
@@ -48,6 +49,8 @@ const (
 	// cove-vmm, for a stop to reach the init and, when the init does not end the VM, to kill it.
 	controlFile = "control.sock"
 	processFile = "vmm.json"
+	// turnFile is the socket cove-vmm listens on for the turns of the agent.
+	turnFile = "turn.sock"
 )
 
 // cmdline is the command line of the kernel: the console libkrun gives, the init of the initramfs,
@@ -168,7 +171,10 @@ func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Reques
 		CPUs: req.CPUs, MemoryMiB: req.MemoryMiB, Cmdline: cmdline,
 		Kernel: filepath.Join(libexec, kernelFile), KernelFormat: kernelFormat(),
 		Initramfs: filepath.Join(dir, initramfsFile), Console: filepath.Join(dir, consoleFile),
-		Vsock: []vmmproto.VsockPort{{Port: control.Port, Socket: filepath.Join(dir, controlFile)}},
+		Vsock: []vmmproto.VsockPort{
+			{Port: control.Port, Socket: filepath.Join(dir, controlFile)},
+			{Port: turn.Port, Socket: filepath.Join(dir, turnFile)},
+		},
 	}
 	if req.Remove {
 		if err := os.WriteFile(filepath.Join(dir, removeFile), nil, 0o600); err != nil {

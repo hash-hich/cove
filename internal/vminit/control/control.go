@@ -1,7 +1,8 @@
-// Package control is how the host drives the init of a VM, apart from the turns of the agent: the
-// port the init listens on, and the messages that go through it. The host sends one Stop, and the
-// init answers with a Step as it reaches each one, then powers the VM off, which ends the
-// connection. The init and the host come from one build, so an unknown field is refused.
+// Package control is how the host drives the init of a VM, apart from the streams of the turns: the
+// port the init listens on, and the messages that go through it. The host sends one Request. For a
+// Stop, the init answers with a Step as it reaches each one, then powers the VM off, which ends the
+// connection. For a Cancel, it answers Received, with an error when no turn bears the ID, and
+// closes. The init and the host come from one build, so an unknown field is refused.
 //
 // The steps are what tells the host an init at work from one that got nothing: a stop that has to
 // be forced says how far the init had gone.
@@ -17,6 +18,24 @@ import (
 // Port is the vsock port the init listens on for the host.
 const Port = 1024
 
+// Request is what the host asks the init, one of its fields set.
+type Request struct {
+	Stop   *Stop   `json:"stop,omitempty"`
+	Cancel *Cancel `json:"cancel,omitempty"`
+}
+
+// Cancel asks the init to cut a turn: its agent is hung up, as a terminal that closes hangs up a
+// shell, and its session killed once Grace has passed. The turn still ends with its Exited frame,
+// Cause as its cause.
+type Cancel struct {
+	// Turn is the ID of the turn, as its Request gave it.
+	Turn string `json:"turn"`
+	// Cause is turn.CauseCancel or turn.CauseTimeout.
+	Cause string `json:"cause"`
+	// Grace is how long the processes of the turn have to end before SIGKILL.
+	Grace time.Duration `json:"grace"`
+}
+
 // Stop asks the init to stop the VM: every process of the image is sent its stop signal, killed
 // once Grace has passed, then the write disk is flushed and made read only, and the VM powered off.
 type Stop struct {
@@ -24,7 +43,7 @@ type Stop struct {
 	Grace time.Duration `json:"grace"`
 }
 
-// Step is a step of a stop the init has reached, or failed to reach.
+// Step is a step of a stop, or the answer to a Cancel, the init has reached, or failed to reach.
 type Step struct {
 	// Name is one of the steps below.
 	Name string `json:"name"`
@@ -35,7 +54,7 @@ type Step struct {
 
 // The steps of a stop, in their order.
 const (
-	// Received is the Stop read.
+	// Received is the Request read.
 	Received = "received"
 	// ProcessesEnded is every process of the image ended, by its stop signal or by SIGKILL.
 	ProcessesEnded = "processes ended"
