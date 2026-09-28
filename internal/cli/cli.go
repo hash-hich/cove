@@ -52,27 +52,31 @@ func (a *App) Run(args []string) int {
 		return ExitUsage
 	}
 
-	switch cmd := fs.Arg(0); cmd {
-	case "help":
+	cmd := fs.Arg(0)
+	if cmd == "help" {
 		printUsage(a.Stdout, fs)
 		return 0
-	// ls and ps are the names docker and podman gave the same verb; both reach list, whose
-	// help and errors carry the canonical name.
-	case "list", "ls", "ps":
-		return listCommand(a, fs.Args()[1:])
-	case "pull":
-		return pullCommand(a, fs.Args()[1:])
-	case "run":
-		return runCommand(a, fs.Args()[1:])
-	case "send":
-		return sendCommand(a, fs.Args()[1:])
-	case "stop":
-		return stopCommand(a, fs.Args()[1:])
-	default:
+	}
+	run, ok := commands[cmd]
+	if !ok {
 		_, _ = fmt.Fprintf(a.Stderr, "unknown command %q\n", cmd)
 		printUsageError(a.Stderr, "", coveUsage)
 		return ExitUsage
 	}
+	return run(a, fs.Args()[1:])
+}
+
+// commands maps each verb of cove to the function that runs it on the arguments that follow it.
+var commands = map[string]func(*App, []string) int{
+	// ls and ps are the names docker and podman gave the same verb; both reach list, whose help
+	// and errors carry the canonical name.
+	"list": listCommand,
+	"ls":   listCommand,
+	"ps":   listCommand,
+	"pull": pullCommand,
+	"run":  runCommand,
+	"send": sendCommand,
+	"stop": stopCommand,
 }
 
 // terminal reports whether stream, a reader or a writer, is a character device, which a terminal
