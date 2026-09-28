@@ -15,6 +15,7 @@ import (
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 	"gitlab.com/hich-hich/cove/internal/vminit/control"
+	"gitlab.com/hich-hich/cove/internal/vminit/turn"
 )
 
 const (
@@ -387,32 +388,75 @@ func TestParseList(t *testing.T) {
 	}
 }
 
-func TestVerbsWithoutABackend(t *testing.T) {
+func TestSendToAnUnknownSandbox(t *testing.T) {
+	// The inventory is a fresh directory, on macOS under $HOME and on Linux under $XDG_STATE_HOME.
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+
+	for _, args := range [][]string{sendArgs(demo), sendArgs(demo, "fix the ci")} {
+		var stdout, stderr bytes.Buffer
+		app := &cli.App{Stdout: &stdout, Stderr: &stderr}
+
+		code := app.Run(args)
+
+		// The arguments were valid, so no usage is shown: the caller learns that the command is
+		// well formed and, separately, that there is no sandbox to run it in.
+		require.Equal(t, cli.ExitPreflight, code, args)
+		require.Empty(t, stdout.String())
+		require.Contains(t, stderr.String(), "no such sandbox")
+		require.NotContains(t, stderr.String(), "Usage:")
+	}
+}
+
+func TestSendExitCode(t *testing.T) {
 	t.Parallel()
 
+	code := func(c int) *int { return &c }
 	tests := []struct {
-		name string
-		args []string
+		name       string
+		exit       turn.Exit
+		err        error
+		want       int
+		wantStderr string
 	}{
-		{name: "send attached", args: sendArgs(demo)},
-		{name: "send driven", args: sendArgs(demo, "fix the ci")},
+		{name: "the agent exited", exit: turn.Exit{Cause: turn.CauseAgent, Code: code(3)}, want: 3},
+		{name: "the agent succeeded", exit: turn.Exit{Cause: turn.CauseAgent, Code: code(0)}, want: 0},
+		{name: "the agent died of a signal", exit: turn.Exit{Cause: turn.CauseAgent, Signal: 11}, want: 139},
+		{
+			name: "the agent was not found",
+			err:  &turn.ExecError{Errno: turn.ErrnoNotFound, Message: "claude not found in PATH"},
+			want: 127, wantStderr: "could not be run: claude not found",
+		},
+		{
+			name: "the agent could not be executed",
+			err:  &turn.ExecError{Errno: 13, Message: "permission denied"},
+			want: 126, wantStderr: "could not be run",
+		},
+		{
+			name: "the init failed before execve",
+			err:  &turn.ExecError{Message: "the VM is stopping"},
+			want: cli.ExitPreflight, wantStderr: "the VM is stopping",
+		},
+		// The cause wins over the signal: a stop hangs an attached agent up, which dies of SIGHUP.
+		{name: "stopped", exit: turn.Exit{Cause: turn.CauseStop, Signal: 1}, want: 143, wantStderr: "stopped"},
+		{name: "cancelled", exit: turn.Exit{Cause: turn.CauseCancel, Signal: 9}, want: 130, wantStderr: "cancelled"},
+		{name: "timed out", exit: turn.Exit{Cause: turn.CauseTimeout, Code: code(0)}, want: 124, wantStderr: "time was up"},
+		{name: "abandoned", err: cli.ErrAbandoned, want: 130, wantStderr: "abandoned"},
+		{name: "lost", err: errors.New("the connection to the turn ended"), want: cli.ExitPreflight, wantStderr: "ended"},
+		{name: "unknown cause", exit: turn.Exit{Cause: "flood"}, want: cli.ExitPreflight, wantStderr: "flood"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			var stdout, stderr bytes.Buffer
-			app := &cli.App{Stdout: &stdout, Stderr: &stderr}
-
-			code := app.Run(tt.args)
-
-			// The arguments were valid, so no usage is shown: the caller learns that the command
-			// is well formed and, separately, that cove has nothing to run it with.
-			require.Equal(t, cli.ExitPreflight, code)
-			require.Empty(t, stdout.String())
-			require.Contains(t, stderr.String(), "not implemented yet")
-			require.NotContains(t, stderr.String(), "Usage:")
+			var stderr bytes.Buffer
+			require.Equal(t, tt.want, cli.SendExitCode(&stderr, tt.exit, tt.err))
+			if tt.wantStderr == "" {
+				require.Empty(t, stderr.String(), "the agent ended the turn, cove has nothing to add")
+			} else {
+				require.Contains(t, stderr.String(), tt.wantStderr)
+			}
 		})
 	}
 }

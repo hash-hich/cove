@@ -14,7 +14,7 @@ import (
 const ExitUsage = 2
 
 // ExitPreflight is the exit code when cove itself could not carry a command out, as the 125 of
-// docker run. send returns it until cove can reach the agent of a sandbox.
+// docker run.
 const ExitPreflight = 125
 
 // App holds the streams of a cove invocation.
@@ -75,14 +75,6 @@ func (a *App) Run(args []string) int {
 	}
 }
 
-// notImplemented reports on stderr that verb has no backend to carry it out, and returns the exit
-// code to end with. The verb parsed its arguments first, so the caller learns that the command it
-// wrote is well formed, and learns it separately from the fact that cove cannot run it yet.
-func notImplemented(a *App, verb string) int {
-	_, _ = fmt.Fprintf(a.Stderr, "cove %s: not implemented yet: the micro-VM backend is being replaced\n", verb)
-	return ExitPreflight
-}
-
 // terminal reports whether stream, a reader or a writer, is a character device, which a terminal
 // is and a pipe or a file is not. It is an approximation of the real question, whether the stream
 // renders what is written for a human: a redirection from another character device passes it.
@@ -125,9 +117,6 @@ Commands:
   run     Create a sandbox from a repository
   send    Talk to the agent of a sandbox
   stop    Stop sandboxes
-
-send is not implemented yet: nothing reaches the agent of a sandbox. It
-validates its arguments, then exits 125 having done nothing.
 `
 
 // printUsage writes the usage text and the flag defaults of fs to w.

@@ -35,3 +35,9 @@ var RepositoryColumn = repositoryColumn
 
 // StopReport exposes stopReport to the tests of the package.
 var StopReport = stopReport
+
+// SendExitCode exposes exitCode to the tests of the package.
+var SendExitCode = exitCode
+
+// ErrAbandoned exposes errAbandoned to the tests of the package.
+var ErrAbandoned = errAbandoned
