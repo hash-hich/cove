@@ -41,6 +41,10 @@ const (
 	cpusRange = "takes 1 to 255 vCPUs"
 	// goImage is the profile the run tests name.
 	goImage = "cove-go:local"
+	// atLeastOne is what a verb that takes targets says when given none.
+	atLeastOne = "requires at least 1 argument"
+	// help is the verb that shows the usage of cove.
+	help = "help"
 	// remote is the image the pull tests name, on its registry.
 	remote = "ghcr.io/org/repo:tag"
 )
@@ -60,6 +64,11 @@ func stopArgs(args ...string) []string {
 	return append([]string{"stop"}, args...)
 }
 
+// rmArgs prefixes args with the rm command.
+func rmArgs(args ...string) []string {
+	return append([]string{"rm"}, args...)
+}
+
 // sendArgs prefixes args with the send command.
 func sendArgs(args ...string) []string {
 	return append([]string{"send"}, args...)
@@ -74,7 +83,7 @@ func pullArgs(args ...string) []string {
 // otherwise, which is what its shape is shown for.
 func refused(args []string) string {
 	switch args[0] {
-	case "list", "pull", "run", "send", "stop":
+	case "list", "pull", "rm", "run", "send", "stop":
 		return "cove " + args[0]
 	default:
 		return "cove"
@@ -110,20 +119,24 @@ func TestRunUsageErrors(t *testing.T) {
 		{name: "run no url", args: runArgs(), wantStderr: "requires 1 argument"},
 		{name: "run command", args: runArgs(repo, "bash"), wantStderr: "takes no command"},
 		{name: "run git clone depth", args: runArgs("--depth", "1", repo), wantStderr: "not defined: -depth"},
-		{name: "stop no target", args: stopArgs(), wantStderr: "requires at least 1 argument"},
+		{name: "stop no target", args: stopArgs(), wantStderr: atLeastOne},
 		{name: "stop all with target", args: stopArgs("--all", demo), wantStderr: "takes no target"},
 		{name: "stop unknown flag", args: stopArgs("--bogus", demo), wantStderr: unknownFlag},
 		{name: "stop podman ignore", args: stopArgs("-i", demo), wantStderr: "not defined: -i"},
 		{name: "stop signal", args: stopArgs("-s", "SIGKILL", demo), wantStderr: "not defined: -s"},
 		{name: "stop bad time", args: stopArgs("-t", "x", demo), wantStderr: "invalid value"},
 		{name: "stop negative time", args: stopArgs("-t", "-1", demo), wantStderr: "must be positive"},
+		{name: "rm no target", args: rmArgs(), wantStderr: atLeastOne},
+		{name: "rm unknown flag", args: rmArgs("--bogus", demo), wantStderr: unknownFlag},
+		{name: "rm docker volumes", args: rmArgs("-v", demo), wantStderr: "not defined: -v"},
+		{name: "rm all", args: rmArgs("--all"), wantStderr: "not defined: -all"},
 		{name: "list unknown flag", args: listArgs("--bogus"), wantStderr: unknownFlag},
 		{name: "list unknown format", args: listArgs("--format", "yaml"), wantStderr: "must be table or json"},
 		{name: "list docker filter", args: listArgs("--filter", "label=cove"), wantStderr: "not defined: -filter"},
 		{name: "list target", args: listArgs(demo), wantStderr: "takes no argument"},
 		{name: "list docker all", args: listArgs("-a"), wantStderr: "not defined: -a"},
 		{name: "list two formats", args: listArgs(jsonFlag, "--format", table), wantStderr: "two formats"},
-		{name: "send no target", args: sendArgs(), wantStderr: "requires at least 1 argument"},
+		{name: "send no target", args: sendArgs(), wantStderr: atLeastOne},
 		{name: "send two prompts", args: sendArgs(demo, "a", "b"), wantStderr: "takes one prompt"},
 		{name: "send empty prompt", args: sendArgs(demo, ""), wantStderr: "the prompt is empty"},
 		{name: "send empty resume", args: sendArgs("-r", "", demo), wantStderr: "--resume requires a thread"},
@@ -183,13 +196,15 @@ func TestRunHelp(t *testing.T) {
 		want string
 	}{
 		{name: "flag", args: []string{"-h"}, want: "Usage: cove <command>"},
-		{name: "command", args: []string{"help"}, want: "Usage: cove <command>"},
+		{name: "command", args: []string{help}, want: "Usage: cove <command>"},
 		{name: "run flag", args: runArgs("-h"), want: "Usage: cove run"},
 		{name: "stop flag", args: stopArgs("-h"), want: "Usage: cove stop"},
+		{name: "rm flag", args: rmArgs("-h"), want: "Usage: cove rm"},
+		{name: "rm listed", args: []string{help}, want: "rm      Remove sandboxes"},
 		{name: "send flag", args: sendArgs("-h"), want: "Usage: cove send"},
 		{name: "list flag", args: listArgs("-h"), want: listUsage},
 		{name: "pull flag", args: pullArgs("-h"), want: "Usage: cove pull"},
-		{name: "pull listed", args: []string{"help"}, want: "pull    Pull an image"},
+		{name: "pull listed", args: []string{help}, want: "pull    Pull an image"},
 		{name: "ls alias", args: []string{"ls", "-h"}, want: listUsage},
 		{name: "ps alias", args: []string{"ps", "-h"}, want: listUsage},
 	}
@@ -296,6 +311,32 @@ func TestParseStop(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.want, spec)
 			require.Equal(t, tt.wantAll, all)
+		})
+	}
+}
+
+func TestParseRm(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want cli.RmSpec
+	}{
+		{name: "one target", args: []string{demo}, want: cli.RmSpec{Targets: []string{demo}}},
+		{name: "several targets", args: []string{"a", "b", "c"}, want: cli.RmSpec{Targets: []string{"a", "b", "c"}}},
+		{name: "force", args: []string{"-f", demo}, want: cli.RmSpec{Targets: []string{demo}, Force: true}},
+		{name: longForms, args: []string{"--force", demo}, want: cli.RmSpec{Targets: []string{demo}, Force: true}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			spec, err := cli.ParseRm(tt.args)
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, spec)
 		})
 	}
 }

@@ -9,6 +9,9 @@ var ParseList = parseList
 // ParseStop exposes parseStop to the tests of the package.
 var ParseStop = parseStop
 
+// ParseRm exposes parseRm to the tests of the package.
+var ParseRm = parseRm
+
 // ParseSend exposes parseSend to the tests of the package.
 var ParseSend = parseSend
 

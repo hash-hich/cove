@@ -74,6 +74,7 @@ var commands = map[string]func(*App, []string) int{
 	"ls":   listCommand,
 	"ps":   listCommand,
 	"pull": pullCommand,
+	"rm":   rmCommand,
 	"run":  runCommand,
 	"send": sendCommand,
 	"stop": stopCommand,
@@ -118,6 +119,7 @@ Commands:
   help    Show help
   list    List sandboxes (aliases: ls, ps)
   pull    Pull an image into the store of cove
+  rm      Remove sandboxes
   run     Create a sandbox from a repository
   send    Talk to the agent of a sandbox
   stop    Stop sandboxes
