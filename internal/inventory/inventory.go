@@ -197,6 +197,15 @@ func Hold(ctx context.Context, dir string) (*filelock.Lock, error) {
 	return filelock.Take(ctx, filepath.Join(dir, lockFile), nil)
 }
 
+// TryHold takes the lock of the sandbox in dir and returns it when no VM runs in it, and reports
+// false, without waiting, when one does: the lock is what says a VM runs, at the moment it is
+// taken, where the state of a listed entry may already be stale. Until it is released, the sandbox
+// reads as running and no VM starts in it.
+func TryHold(dir string) (*filelock.Lock, bool, error) {
+	//nolint:wrapcheck // Try names the lock.
+	return filelock.Try(filepath.Join(dir, lockFile))
+}
+
 // Remove removes the sandbox id of root, its directory and all it holds, under the lock of the
 // root so that no one lists it half removed. It is for a sandbox whose VM does not run.
 func Remove(ctx context.Context, root, id string) error {

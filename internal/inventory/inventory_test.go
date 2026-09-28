@@ -248,3 +248,25 @@ func TestHoldWaitsForTheVMToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, inventory.Running, got[0].State, "a held sandbox starts no VM, and reads as running")
 }
+
+func TestTryHoldRefusesARunningSandbox(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	dir, lock, err := inventory.Add(t.Context(), root, description("a1", demo, time.Now()))
+	require.NoError(t, err)
+
+	_, ok, err := inventory.TryHold(dir)
+	require.NoError(t, err)
+	require.False(t, ok, "the lock of a running sandbox is not taken")
+
+	lock.Release()
+	held, ok, err := inventory.TryHold(dir)
+	require.NoError(t, err)
+	require.True(t, ok)
+	t.Cleanup(held.Release)
+
+	got, err := inventory.List(t.Context(), root)
+	require.NoError(t, err)
+	require.Equal(t, inventory.Running, got[0].State, "a held sandbox starts no VM, and reads as running")
+}
