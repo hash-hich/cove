@@ -124,7 +124,7 @@ func end(ctx context.Context, dir string, timeout time.Duration, st *Stopped) (*
 // returned wait returns. wait is told whether the VM ended, and then returns once the steps are
 // all read, or at once when the VM did not.
 func ask(dir string, timeout time.Duration, st *Stopped) (func(ended bool), error) {
-	conn, err := dialControl(dir)
+	conn, err := dial(dir, controlFile)
 	if err != nil {
 		return nil, err
 	}
@@ -162,11 +162,11 @@ func ask(dir string, timeout time.Duration, st *Stopped) (func(ended bool), erro
 // dialMu is held while cove works in the directory of a sandbox to connect to its socket.
 var dialMu sync.Mutex
 
-// dialControl connects to the socket cove-vmm listens on for the init of the sandbox in dir. A
-// Unix socket takes a path of 104 bytes at most on macOS, shorter than the one of a sandbox, so the
-// socket is reached by its name from dir, the working directory of cove for the time of the
-// connect.
-func dialControl(dir string) (net.Conn, error) {
+// dial connects to the socket named name that cove-vmm listens on for a port of the init of the
+// sandbox in dir. A Unix socket takes a path of 104 bytes at most on macOS, shorter than the one of
+// a sandbox, so the socket is reached by its name from dir, the working directory of cove for the
+// time of the connect.
+func dial(dir, name string) (net.Conn, error) {
 	dialMu.Lock()
 	defer dialMu.Unlock()
 	wd, err := os.Getwd()
@@ -178,9 +178,9 @@ func dialControl(dir string) (net.Conn, error) {
 	}
 	defer func() { _ = os.Chdir(wd) }()
 	//nolint:noctx // A connect on a Unix socket does not wait: the listener answers or refuses.
-	conn, err := net.Dial("unix", controlFile)
+	conn, err := net.Dial("unix", name)
 	if err != nil {
-		return nil, fmt.Errorf("connect to %s: %w", controlFile, err)
+		return nil, fmt.Errorf("connect to %s: %w", name, err)
 	}
 	return conn, nil
 }
