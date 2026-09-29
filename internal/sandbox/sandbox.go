@@ -1,8 +1,9 @@
 // Package sandbox creates a sandbox: it lays out the files of the sandbox on the host, the write
-// disk, the initramfs of the run and the console, and hands cove-vmm the paths of the files the VM
-// needs through vmmlaunch. It returns once the init of the guest says the image is mounted, or
-// with what the console said when the VM ended before. It stops a sandbox too, through its init,
-// and removes it when run was asked to.
+// disk, the initramfs of the run and the console, starts cove-net on the network card through
+// netstacklaunch, and hands cove-vmm the paths of the files the VM needs and the card through
+// vmmlaunch. It returns once the init of the guest says the image is mounted, or with what the
+// console said when the VM ended before. It stops a sandbox too, through its init, and removes it
+// when run was asked to.
 //
 // It assembles the packages that do each job, in order, and does none of that work itself.
 package sandbox
@@ -12,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,6 +22,7 @@ import (
 
 	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/inventory"
+	"gitlab.com/hich-hich/cove/internal/netstack/netstacklaunch"
 	"gitlab.com/hich-hich/cove/internal/process"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/vminit/control"
@@ -52,7 +55,26 @@ const (
 	processFile = "vmm.json"
 	// turnFile is the socket cove-vmm listens on for the turns of the agent.
 	turnFile = "turn.sock"
+	// cardFile is the socket cove-net listens on for the network card, netLogFile what cove-net
+	// says, and netProcessFile names that cove-net, for a stop to kill it.
+	cardFile       = "card.sock"
+	netLogFile     = "net.log"
+	netProcessFile = "net.json"
 )
+
+// The network of the card, fixed by cove and the same for every VM: each VM has a link of its own,
+// and nothing sees two VMs on one network. A /30 rather than a /24: the guest takes every address
+// of the network of the card for one of its link, so an address of it elsewhere, on the LAN or a
+// VPN of the host, becomes unreachable from the guest; a /30 hides four.
+var (
+	// cardGateway is cove-net, the gateway and the resolver of the guest.
+	cardGateway = netip.MustParsePrefix("10.0.2.1/30")
+	// cardGuest is the address of the guest.
+	cardGuest = netip.MustParsePrefix("10.0.2.2/30")
+)
+
+// cardMAC is the address of the card in the guest.
+const cardMAC = "5a:94:ef:e4:0c:ee"
 
 // cmdline is the command line of the kernel: the console libkrun gives, the init of the initramfs,
 // and a panic that ends the VM rather than leaving it hung.
@@ -89,10 +111,11 @@ type Sandbox struct {
 	VM *vmmlaunch.VM
 }
 
-// Create makes the sandbox of req under root, the directory of the sandboxes, with the cove-vmm,
-// kernel and init of libexec beside cove, and returns once its image is mounted. The sandbox enters
-// the inventory first, and its cove-vmm holds its lock from then on. A sandbox that fails is
-// removed, its VM included, and the error carries what cove-vmm and the console said.
+// Create makes the sandbox of req under root, the directory of the sandboxes, with the cove-net,
+// cove-vmm, kernel and init of libexec beside cove, and returns once its image is mounted. The
+// sandbox enters the inventory first, and its cove-net and cove-vmm hold its lock from then on,
+// until both have ended. A sandbox that fails is removed, its VM and its cove-net included, and
+// the error carries what they and the console said.
 func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err error) {
 	libexecDir, err := process.Dir()
 	if err != nil {
@@ -118,33 +141,88 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 			lock.Release()
 			return
 		}
-		// cove-vmm holds the lock from now on, and alone once cove ends.
+		// cove-net and cove-vmm hold the lock from now on, and alone once cove ends.
 		lock.Close()
 	}()
 	vmReq, err := write(libexecDir, dir, req, size)
 	if err != nil {
 		return nil, err
 	}
+	// libkrun connects to the card when the driver of the guest starts, and fails when nothing
+	// listens: cove-net listens before cove-vmm starts.
+	card, err := startNet(ctx, libexecDir, dir, lock.File())
+	if err != nil {
+		return nil, withConsole(err, dir)
+	}
+	vm, err := startVM(ctx, libexecDir, dir, vmReq, lock.File())
+	if err != nil {
+		card.Kill()
+		return nil, withConsole(err, dir)
+	}
+	if err := waitReady(ctx, vm, vmReq.Console); err != nil {
+		vm.Kill()
+		card.Kill()
+		return nil, withConsole(err, dir)
+	}
+	return &Sandbox{Dir: dir, Console: vmReq.Console, WriteDisk: size, VM: vm}, nil
+}
+
+// startNet starts the cove-net of libexecDir on the card of the sandbox in dir, handing it lock,
+// and writes what names it.
+func startNet(ctx context.Context, libexecDir, dir string, lock *os.File) (*netstacklaunch.Net, error) {
+	nameservers, err := netstacklaunch.Nameservers()
+	if err != nil {
+		return nil, err //nolint:wrapcheck // Nameservers names the file.
+	}
+	//nolint:gosec // G304: the log of cove-net, in the directory of the sandbox.
+	log, err := os.OpenFile(filepath.Join(dir, netLogFile), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("create the log of cove-net: %w", err)
+	}
+	defer func() { _ = log.Close() }()
+	card, err := netstacklaunch.Start(ctx, libexecDir, netstacklaunch.Request{
+		Socket: filepath.Join(dir, cardFile), Gateway: cardGateway, Nameservers: nameservers,
+		// The card connects during the boot, so a card that is not connected by then never will be.
+		AcceptTimeout: bootTimeout, Log: log, Lock: lock,
+	})
+	if err != nil {
+		return nil, err //nolint:wrapcheck // Start names cove-net and what it said.
+	}
+	p, err := card.Process()
+	if err == nil {
+		err = writeProcess(dir, netProcessFile, p)
+	}
+	if err != nil {
+		card.Kill()
+		return nil, err
+	}
+	return card, nil
+}
+
+// startVM starts the cove-vmm of libexecDir on req, with the card of the sandbox in dir, handing it
+// lock, and writes what names it.
+func startVM(ctx context.Context, libexecDir, dir string, req vmmlaunch.Request, lock *os.File) (*vmmlaunch.VM, error) {
 	//nolint:gosec // G304: the log of cove-vmm, in the directory of the sandbox.
 	log, err := os.OpenFile(filepath.Join(dir, vmmLogFile), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("create the log of cove-vmm: %w", err)
 	}
-	vmReq.Log, vmReq.Lock = log, lock.File()
-	vm, err := vmmlaunch.Start(ctx, libexecDir, vmReq)
-	_ = log.Close()
+	defer func() { _ = log.Close() }()
+	req.Card = &vmmproto.Card{Socket: filepath.Join(dir, cardFile), MAC: cardMAC}
+	req.Log, req.Lock = log, lock
+	vm, err := vmmlaunch.Start(ctx, libexecDir, req)
 	if err != nil {
-		return nil, withConsole(err, dir)
+		return nil, err //nolint:wrapcheck // Start names cove-vmm and what it said.
 	}
-	if err := writeProcess(dir, vm); err != nil {
+	p, err := vm.Process()
+	if err == nil {
+		err = writeProcess(dir, processFile, p)
+	}
+	if err != nil {
 		vm.Kill()
-		return nil, withConsole(err, dir)
+		return nil, err
 	}
-	if err := waitReady(ctx, vm, vmReq.Console); err != nil {
-		vm.Kill()
-		return nil, withConsole(err, dir)
-	}
-	return &Sandbox{Dir: dir, Console: vmReq.Console, WriteDisk: size, VM: vm}, nil
+	return vm, nil
 }
 
 // diskSize returns the size of the write disk of a sandbox of root, the largest up to capacity that
@@ -219,6 +297,8 @@ func describe(req Request, size rwdisk.Size) (*spec.Run, error) {
 		run.Layers[i] = spec.Layer{Disk: spec.Disk{Size: fi.Size()}, DiffID: l.DiffID, Mountpoint: l.Mountpoint}
 	}
 	run.Write = spec.Disk{Size: int64(size)}
+	run.Network = &spec.Network{Address: cardGuest, Gateway: cardGateway.Addr()}
+	run.Nameservers = []string{cardGateway.Addr().String()}
 	return &run, nil
 }
 

@@ -1,7 +1,10 @@
 package sandbox_test
 
 import (
+	"encoding/json"
+	"net/netip"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -9,6 +12,7 @@ import (
 
 	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/inventory"
+	"gitlab.com/hich-hich/cove/internal/process"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/sandbox"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
@@ -56,5 +60,49 @@ func TestDescribeSizesEachLayerByItsFile(t *testing.T) {
 		},
 		Write: spec.Disk{Size: int64(rwdisk.Sizes[0])},
 		User:  "agent", Project: "repo", Agent: "claude",
-	}, got)
+		Network: &spec.Network{
+			Address: netip.MustParsePrefix("10.0.2.2/30"), Gateway: netip.MustParseAddr("10.0.2.1"),
+		},
+		Nameservers: []string{"10.0.2.1"},
+	}, got, "the guest resolves through cove-net, the gateway, never through the host")
+}
+
+// sleeper starts a process that runs until it is killed, writes what names it in the file name of
+// dir, and returns the wait of its end.
+func sleeper(t *testing.T, dir, name string) <-chan error {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "sleep", "60")
+	require.NoError(t, cmd.Start())
+	p, ok, err := process.Find(cmd.Process.Pid)
+	require.NoError(t, err)
+	require.True(t, ok)
+	out, err := json.Marshal(p)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(dir+"/"+name, out, 0o600))
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	return done
+}
+
+func TestKillEndsCoveVMMThenCoveNet(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	vmm, net := sleeper(t, dir, "vmm.json"), sleeper(t, dir, "net.json")
+
+	require.NoError(t, sandbox.Kill(dir))
+
+	require.ErrorContains(t, <-vmm, "signal: killed")
+	require.ErrorContains(t, <-net, "signal: killed")
+}
+
+func TestKillTakesASandboxWithoutCoveNet(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	vmm := sleeper(t, dir, "vmm.json")
+
+	require.NoError(t, sandbox.Kill(dir), "a sandbox of a cove without cove-net")
+
+	require.ErrorContains(t, <-vmm, "signal: killed")
 }

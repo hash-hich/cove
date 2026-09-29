@@ -55,11 +55,11 @@ func waitReady(ctx context.Context, vm *vmmlaunch.VM, path string) error {
 	}
 }
 
-// withConsole returns err followed by the last lines of what cove-vmm said and of the console of
-// the sandbox in dir, those that hold any.
+// withConsole returns err followed by the last lines of what cove-net and cove-vmm said and of the
+// console of the sandbox in dir, those that hold any.
 func withConsole(err error, dir string) error {
 	for _, f := range []struct{ name, what string }{
-		{vmmLogFile, "cove-vmm said"}, {consoleFile, "the console ended with"},
+		{netLogFile, "cove-net said"}, {vmmLogFile, "cove-vmm said"}, {consoleFile, "the console ended with"},
 	} {
 		//nolint:gosec // G304: a file of the sandbox, in its directory.
 		out, rerr := os.ReadFile(filepath.Join(dir, f.name))

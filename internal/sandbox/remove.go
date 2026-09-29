@@ -12,7 +12,7 @@ var ErrRunning = errors.New("its VM is running: stop it first, or force the remo
 
 // Remove removes the sandbox e of root, its write disk included. The lock of the sandbox says
 // whether its VM runs, at the moment of the removal: Remove returns ErrRunning when it is held,
-// unless force, which kills cove-vmm at once first. Remove returns ErrStateUnknown for a sandbox
+// unless force, which kills cove-vmm and cove-net at once first. Remove returns ErrStateUnknown for a sandbox
 // without a lock, since nothing says that no VM writes on its disk.
 func Remove(ctx context.Context, root string, e inventory.Entry, force bool) error {
 	if e.State == inventory.Unknown {

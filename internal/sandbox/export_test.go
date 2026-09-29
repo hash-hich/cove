@@ -8,3 +8,6 @@ var Describe = describe
 
 // ReadTurn exposes readTurn to the tests of the package.
 var ReadTurn = readTurn
+
+// Kill exposes kill to the tests of the package.
+var Kill = kill

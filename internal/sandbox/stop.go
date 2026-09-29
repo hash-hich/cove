@@ -16,7 +16,6 @@ import (
 	"gitlab.com/hich-hich/cove/internal/inventory"
 	"gitlab.com/hich-hich/cove/internal/process"
 	"gitlab.com/hich-hich/cove/internal/vminit/control"
-	"gitlab.com/hich-hich/cove/internal/vmm/vmmlaunch"
 )
 
 // DefaultStopTimeout is how long a stop waits for the VM to end before it kills cove-vmm: the grace
@@ -39,7 +38,8 @@ var ErrStateUnknown = errors.New("its state is unknown, and cove has nothing to 
 
 // Stopped is what a stop did.
 type Stopped struct {
-	// Killed is set when cove-vmm was killed rather than powered off by the init, and says why.
+	// Killed is set when cove-vmm and cove-net were killed rather than the VM powered off by the
+	// init, and says why.
 	Killed error
 	// Steps are the steps the init reported, in order.
 	Steps []control.Step
@@ -47,9 +47,10 @@ type Stopped struct {
 	Removed bool
 }
 
-// Stop stops the VM of the sandbox e of root and returns once cove-vmm has ended. The init is asked
-// to stop the processes of the image and to close the write disk, and cove-vmm is killed when the
-// VM has not ended within timeout, or at once when the init cannot be reached or timeout is zero.
+// Stop stops the VM of the sandbox e of root and returns once cove-vmm and cove-net have ended:
+// cove-net ends with the card, when cove-vmm does. The init is asked to stop the processes of the
+// image and to close the write disk, and cove-vmm then cove-net are killed when the VM has not
+// ended within timeout, or at once when the init cannot be reached or timeout is zero.
 // A VM that already ended is not an error. The sandbox is removed afterwards when run --rm marked
 // it. Stop returns ErrStateUnknown for a sandbox without a lock.
 func Stop(ctx context.Context, root string, e inventory.Entry, timeout time.Duration) (Stopped, error) {
@@ -108,14 +109,14 @@ func end(ctx context.Context, dir string, timeout time.Duration, st *Stopped) (*
 		why = fmt.Errorf("the VM did not end within %s", timeout)
 	}
 	if err := kill(dir); err != nil {
-		return nil, fmt.Errorf("%w, and cove-vmm could not be killed: %w", why, err)
+		return nil, fmt.Errorf("%w, and could not be killed: %w", why, err)
 	}
 	st.Killed = why
 	killCtx, cancel := context.WithTimeout(ctx, killWait)
 	defer cancel()
 	lock, err := inventory.Hold(killCtx, dir)
 	if err != nil {
-		return nil, fmt.Errorf("cove-vmm was killed and did not end: %w", err)
+		return nil, fmt.Errorf("cove-vmm and cove-net were killed and did not end: %w", err)
 	}
 	return lock, nil
 }
@@ -186,35 +187,45 @@ func dial(dir, name string) (net.Conn, error) {
 	return conn, nil
 }
 
-// writeProcess writes in dir what names the cove-vmm of vm, for a stop to kill it.
-func writeProcess(dir string, vm *vmmlaunch.VM) error {
-	p, err := vm.Process()
-	if err != nil {
-		return err //nolint:wrapcheck // Process names cove-vmm.
-	}
+// writeProcess writes in the file name of dir what names p, a process of libexec, for a stop to
+// kill it.
+func writeProcess(dir, name string, p process.Process) error {
 	out, err := json.Marshal(p)
 	if err != nil {
-		return fmt.Errorf("encode the process of cove-vmm: %w", err)
+		return fmt.Errorf("encode %s: %w", name, err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, processFile), out, 0o600); err != nil {
-		return fmt.Errorf("write the process of cove-vmm: %w", err)
+	if err := os.WriteFile(filepath.Join(dir, name), out, 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", name, err)
 	}
 	return nil
 }
 
-// kill kills the cove-vmm of the sandbox in dir, named by its processFile.
+// kill kills the cove-vmm of the sandbox in dir, then its cove-net, each named by its file. A
+// sandbox of a cove without cove-net has no netProcessFile, and nothing more to kill.
 func kill(dir string) error {
+	if err := killProcess(dir, processFile, "cove-vmm"); err != nil {
+		return err
+	}
+	err := killProcess(dir, netProcessFile, "cove-net")
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// killProcess kills program, the process of libexec the file name of dir names.
+func killProcess(dir, name, program string) error {
 	//nolint:gosec // G304: a file of the sandbox, in its directory.
-	out, err := os.ReadFile(filepath.Join(dir, processFile))
+	out, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil {
-		return fmt.Errorf("find the cove-vmm to kill: %w", err)
+		return fmt.Errorf("find the %s to kill: %w", program, err)
 	}
 	var p process.Process
 	if err := json.Unmarshal(out, &p); err != nil {
-		return fmt.Errorf("find the cove-vmm to kill: %s: %w", processFile, err)
+		return fmt.Errorf("find the %s to kill: %s: %w", program, name, err)
 	}
 	if err := p.Kill(); err != nil {
-		return fmt.Errorf("cove-vmm: %w", err)
+		return fmt.Errorf("%s: %w", program, err)
 	}
 	return nil
 }
