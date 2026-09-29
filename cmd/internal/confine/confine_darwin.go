@@ -14,32 +14,25 @@ void sandbox_free_error(char *errorbuf);
 import "C"
 
 import (
-	_ "embed"
 	"fmt"
 	"strings"
 	"unsafe"
 )
 
-// profile is the Seatbelt profile of cove-vmm: everything denied, then only what the monitor was
-// seen to need, each rule with the reason it is there.
-//
-//go:embed vmm.sb
-var profile string
-
-// Enter puts the process in the Seatbelt sandbox of cove-vmm, for good: nothing takes it out. The
-// monitor may then read the files of read, read and write those of write, and create the Unix
-// sockets of listen and accept connections on them, each named by its resolved path: a rule
-// matches the path a file is reached by, and a link to it is not that path.
-func Enter(read, write, listen []string) error {
+// Enter puts the process in a Seatbelt sandbox, for good: nothing takes it out. profile is the
+// Seatbelt profile of the binary, everything denied then what it was seen to need, and one rule per
+// file of paths is appended to it. The process may then read the files of Read, read and write
+// those of Write, and create the Unix sockets of Listen and accept connections on them.
+func Enter(profile string, paths Paths) error {
 	var b strings.Builder
 	_, _ = b.WriteString(profile)
-	for _, path := range read {
+	for _, path := range paths.Read {
 		_, _ = fmt.Fprintf(&b, "(allow file-read-data file-read-metadata (literal %s))\n", quote(path))
 	}
-	for _, path := range write {
+	for _, path := range paths.Write {
 		_, _ = fmt.Fprintf(&b, "(allow file-read-data file-read-metadata file-write-data (literal %s))\n", quote(path))
 	}
-	for _, path := range listen {
+	for _, path := range paths.Listen {
 		// libkrun looks whether the socket is there before it binds it, and binding creates its file.
 		// Accepting a connection asks for nothing more.
 		_, _ = fmt.Fprintf(&b, "(allow file-read-metadata file-write-create (literal %s))\n", quote(path))
@@ -50,7 +43,7 @@ func Enter(read, write, listen []string) error {
 	var errbuf *C.char
 	if C.sandbox_init(p, 0, &errbuf) != 0 {
 		defer C.sandbox_free_error(errbuf)
-		return fmt.Errorf("enter the sandbox of cove-vmm: %s", C.GoString(errbuf))
+		return fmt.Errorf("enter the sandbox: %s", C.GoString(errbuf))
 	}
 	return nil
 }

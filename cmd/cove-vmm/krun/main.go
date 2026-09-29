@@ -11,6 +11,7 @@ package main
 
 import (
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -19,10 +20,16 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"gitlab.com/hich-hich/cove/cmd/cove-vmm/internal/confine"
 	"gitlab.com/hich-hich/cove/cmd/cove-vmm/krun/internal/libkrun"
+	"gitlab.com/hich-hich/cove/cmd/internal/confine"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmproto"
 )
+
+// profile is the Seatbelt profile of cove-vmm-krun: everything denied, then only what libkrun was
+// seen to need, each rule with the reason it is there.
+//
+//go:embed vmm.sb
+var profile string
 
 // libkrunVersion and libkrunSHA256 are set by the linker from third_party/libkrun.lock and from
 // the library the build produced.
@@ -100,7 +107,8 @@ func configure(vm vmmproto.VM) (*libkrun.Ctx, error) {
 		return nil, err
 	}
 	files := vm.Files()
-	if err := confine.Enter(files.Read, files.Write, files.Listen); err != nil {
+	paths := confine.Paths{Read: files.Read, Write: files.Write, Listen: files.Listen}
+	if err := confine.Enter(profile, paths); err != nil {
 		return nil, err //nolint:wrapcheck // Enter names the sandbox.
 	}
 	format := libkrun.FormatRaw

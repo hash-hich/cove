@@ -15,8 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	"gitlab.com/hich-hich/cove/cmd/cove-vmm/internal/confine"
+	"gitlab.com/hich-hich/cove/cmd/internal/confine"
 )
+
+// profile denies everything, the base every binary adds its own rules to.
+const profile = "(version 1)\n(deny default)\n"
 
 // childVar makes the test binary the confined process itself: the sandbox cannot be left, so the
 // test runs it in a child.
@@ -43,7 +46,8 @@ func child(what string) int {
 	if what == listenOther || what == listenGiven {
 		return listenChild(what)
 	}
-	if err := confine.Enter([]string{os.Getenv(readVar)}, []string{os.Getenv(writeVar)}, nil); err != nil {
+	paths := confine.Paths{Read: []string{os.Getenv(readVar)}, Write: []string{os.Getenv(writeVar)}}
+	if err := confine.Enter(profile, paths); err != nil {
 		return 2
 	}
 	if !attempts[what]() {
@@ -144,7 +148,7 @@ func listenChild(what string) int {
 	if err := os.Chdir(filepath.Dir(socket)); err != nil {
 		return 2
 	}
-	if err := confine.Enter(nil, nil, []string{socket}); err != nil {
+	if err := confine.Enter(profile, confine.Paths{Listen: []string{socket}}); err != nil {
 		return 2
 	}
 	name := filepath.Base(socket)

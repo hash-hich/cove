@@ -153,7 +153,7 @@ linters:
     rules:
       # cgo rewrites a file that imports "C" before the linters read it, and godot and gocritic
       # then report on the lines of the rewrite, the C preamble among them, not on the source.
-      - path: (cmd/cove-vmm/krun/internal/libkrun/libkrun\.go|cmd/cove-vmm/internal/confine/confine_darwin\.go)$
+      - path: (cmd/cove-vmm/krun/internal/libkrun/libkrun\.go|cmd/internal/confine/confine_darwin\.go)$
         linters:
           - godot
           - gocritic
