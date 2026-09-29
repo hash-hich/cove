@@ -52,11 +52,13 @@ var required = []string{
 	"CONFIG_EXT4_FS",
 	"CONFIG_EXT4_FS_POSIX_ACL",
 	"CONFIG_EXT4_FS_SECURITY",
-	// The channel to the host and the network card, over the one transport both backends use.
+	// The channel to the host and the network card, over the one transport both backends use, and
+	// IPv4, which the init opens sockets of to give the card its address and its route.
 	"CONFIG_VSOCKETS",
 	"CONFIG_VIRTIO_VSOCKETS",
 	"CONFIG_VIRTIO_NET",
 	"CONFIG_VIRTIO_MMIO",
+	"CONFIG_INET",
 	// The init in its initramfs, an ELF whose Go runtime needs futexes, epoll and eventfd.
 	"CONFIG_BLK_DEV_INITRD",
 	"CONFIG_BINFMT_ELF",
