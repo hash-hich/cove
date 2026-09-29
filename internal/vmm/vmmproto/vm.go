@@ -19,6 +19,18 @@ type VM struct {
 	// Vsock are the ports of the guest the host connects to, each through a Unix socket the
 	// monitor creates and listens on. The sockets share one directory.
 	Vsock []VsockPort `json:"vsock,omitempty"`
+	// Card is the network card of the VM, nil for none.
+	Card *Card `json:"card,omitempty"`
+}
+
+// Card is a virtio-net card whose frames go through a Unix stream socket, each preceded by its
+// length. The monitor connects to the socket, which another process listens on before the VM
+// starts, and it shares the directory of the sockets of Vsock.
+type Card struct {
+	// Socket is the path of the socket.
+	Socket string `json:"socket"`
+	// MAC is the address of the card in the guest, as net.ParseMAC reads it.
+	MAC string `json:"mac"`
 }
 
 // VsockPort is a port of the guest reached from the host through a Unix socket.
@@ -32,8 +44,8 @@ type VsockPort struct {
 // Files are the files a cove-vmm confines its monitor to.
 type Files struct {
 	// Read are the files the monitor reads, Write those it writes as well, Listen the Unix
-	// sockets it creates and accepts connections on.
-	Read, Write, Listen []string
+	// sockets it creates and accepts connections on, Connect those it connects to.
+	Read, Write, Listen, Connect []string
 }
 
 // Files returns the files of vm.
@@ -49,6 +61,9 @@ func (vm VM) Files() Files {
 	f.Write = append(f.Write, vm.Console)
 	for _, v := range vm.Vsock {
 		f.Listen = append(f.Listen, v.Socket)
+	}
+	if vm.Card != nil {
+		f.Connect = append(f.Connect, vm.Card.Socket)
 	}
 	return f
 }

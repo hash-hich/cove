@@ -22,7 +22,8 @@ import (
 // Enter puts the process in a Seatbelt sandbox, for good: nothing takes it out. profile is the
 // Seatbelt profile of the binary, everything denied then what it was seen to need, and one rule per
 // file of paths is appended to it. The process may then read the files of Read, read and write
-// those of Write, and create the Unix sockets of Listen and accept connections on them.
+// those of Write, create the Unix sockets of Listen and accept connections on them, and connect to
+// those of Connect.
 func Enter(profile string, paths Paths) error {
 	var b strings.Builder
 	_, _ = b.WriteString(profile)
@@ -37,6 +38,9 @@ func Enter(profile string, paths Paths) error {
 		// Accepting a connection asks for nothing more.
 		_, _ = fmt.Fprintf(&b, "(allow file-read-metadata file-write-create (literal %s))\n", quote(path))
 		_, _ = fmt.Fprintf(&b, "(allow network-bind (local unix-socket (path-literal %s)))\n", quote(path))
+	}
+	for _, path := range paths.Connect {
+		_, _ = fmt.Fprintf(&b, "(allow network-outbound (remote unix-socket (path-literal %s)))\n", quote(path))
 	}
 	p := C.CString(b.String())
 	defer C.free(unsafe.Pointer(p))

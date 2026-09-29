@@ -50,7 +50,8 @@ only binary that links a monitor, through cgo, and the only one signed with
 `cove-vmm` their paths, absolute and with no link left; `cove-vmm` enters its
 sandbox before the monitor runs, allowed exactly these paths: reading for the
 kernel, the initramfs and the layers, writing as well for the write disk and
-the console, binding for the socket of the init. On macOS the sandbox is Seatbelt, `(deny default)` plus what
+the console, binding for the socket of the init, connecting for the socket of the
+card. On macOS the sandbox is Seatbelt, `(deny default)` plus what
 libkrun was seen to be refused and one `literal` rule per file; a platform
 without a confinement written runs no VM. What `cove-vmm` says goes to a log
 of its own. Three messages cross a socket pair: who `cove-vmm` is, the VM,

@@ -54,9 +54,11 @@ func TestBootOfResolvesTheDirectoryOfASocket(t *testing.T) {
 
 	boot, err := vmmlaunch.BootOf(vmmlaunch.Request{
 		Vsock: []vmmproto.VsockPort{{Port: 1024, Socket: link + "/control.sock"}},
+		Card:  &vmmproto.Card{Socket: link + "/card.sock", MAC: "5a:94:ef:e4:0c:ee"},
 	})
 
 	require.NoError(t, err)
 	require.Equal(t, []vmmproto.VsockPort{{Port: 1024, Socket: resolved + "/control.sock"}}, boot.VM.Vsock,
 		"the socket does not exist yet, and its directory has no link left")
+	require.Equal(t, &vmmproto.Card{Socket: resolved + "/card.sock", MAC: "5a:94:ef:e4:0c:ee"}, boot.VM.Card)
 }

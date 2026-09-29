@@ -43,8 +43,11 @@ func TestMain(m *testing.M) {
 
 // child enters the sandbox, then does what, and exits 0 when it succeeded, 1 when it was refused.
 func child(what string) int {
-	if what == listenOther || what == listenGiven {
+	switch what {
+	case listenOther, listenGiven:
 		return listenChild(what)
+	case connectOther, connectGiven:
+		return connectChild(what)
 	}
 	paths := confine.Paths{Read: []string{os.Getenv(readVar)}, Write: []string{os.Getenv(writeVar)}}
 	if err := confine.Enter(profile, paths); err != nil {
@@ -137,6 +140,9 @@ const (
 	listenOther = "listen-other"
 )
 
+// otherSocket is a socket of the directory of the given one, which the child was not given.
+const otherSocket = "other.sock"
+
 // socketVar names to the child the socket it may listen on.
 const socketVar = "COVE_CONFINE_SOCKET"
 
@@ -153,7 +159,7 @@ func listenChild(what string) int {
 	}
 	name := filepath.Base(socket)
 	if what == listenOther {
-		name = "other.sock"
+		name = otherSocket
 	}
 	var lc net.ListenConfig
 	ln, err := lc.Listen(context.Background(), "unix", name)
@@ -205,9 +211,86 @@ func TestEnterListen(t *testing.T) {
 	}
 }
 
-// dialIn connects to the socket name of dir, through a link in a directory whose path is short
-// enough for a Unix socket.
-func dialIn(t *testing.T, dir, name string) {
+// The attempts of a child given a socket to connect to: to that one, and to another of its
+// directory.
+const (
+	connectGiven = "connect-given"
+	connectOther = "connect-other"
+)
+
+// connectChild enters the sandbox from the directory of the socket it was given, as cove-vmm does,
+// then connects to that socket or to another one of the directory, by a path relative to it.
+func connectChild(what string) int {
+	socket := os.Getenv(socketVar)
+	if err := os.Chdir(filepath.Dir(socket)); err != nil {
+		return 2
+	}
+	if err := confine.Enter(profile, confine.Paths{Connect: []string{socket}}); err != nil {
+		return 2
+	}
+	name := filepath.Base(socket)
+	if what == connectOther {
+		name = otherSocket
+	}
+	var d net.Dialer
+	c, err := d.DialContext(context.Background(), "unix", name)
+	if err != nil {
+		return 1
+	}
+	_ = c.Close()
+	return 0
+}
+
+func TestEnterConnect(t *testing.T) {
+	t.Parallel()
+
+	for what, allowed := range map[string]bool{connectGiven: true, connectOther: false} {
+		t.Run(what, func(t *testing.T) {
+			t.Parallel()
+
+			dir, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			for _, name := range []string{"card.sock", otherSocket} {
+				listenIn(t, dir, name)
+			}
+
+			//nolint:gosec // G204, G702: the test binary itself, run again as the child.
+			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^$")
+			cmd.Env = append(os.Environ(), childVar+"="+what, socketVar+"="+filepath.Join(dir, "card.sock"))
+			err = cmd.Run()
+
+			if allowed {
+				require.NoError(t, err)
+				return
+			}
+			exit, ok := err.(*exec.ExitError) //nolint:errorlint // Run returns *ExitError itself.
+			require.True(t, ok, "%v", err)
+			require.Equal(t, 1, exit.ExitCode())
+		})
+	}
+}
+
+// listenIn listens on the socket name of dir, through a link in a directory whose path is short
+// enough for a Unix socket, and accepts its connections until the test ends.
+func listenIn(t *testing.T, dir, name string) {
+	t.Helper()
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", filepath.Join(shortLink(t, dir), name))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+}
+
+// shortLink returns a link to dir in a directory whose path is short enough for a Unix socket.
+func shortLink(t *testing.T, dir string) string {
 	t.Helper()
 	//nolint:usetesting // The temporary directory of the test is what makes the path too long.
 	short, err := os.MkdirTemp("/tmp", "cc")
@@ -215,8 +298,15 @@ func dialIn(t *testing.T, dir, name string) {
 	t.Cleanup(func() { _ = os.RemoveAll(short) })
 	link := filepath.Join(short, "d")
 	require.NoError(t, os.Symlink(dir, link))
+	return link
+}
+
+// dialIn connects to the socket name of dir, through a link in a directory whose path is short
+// enough for a Unix socket.
+func dialIn(t *testing.T, dir, name string) {
+	t.Helper()
 	var d net.Dialer
-	c, err := d.DialContext(t.Context(), "unix", filepath.Join(link, name))
+	c, err := d.DialContext(t.Context(), "unix", filepath.Join(shortLink(t, dir), name))
 	require.NoError(t, err)
 	_ = c.Close()
 }

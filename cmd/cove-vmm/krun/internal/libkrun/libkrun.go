@@ -19,6 +19,8 @@ int32_t krun_set_console_output(uint32_t ctx_id, const char *c_filepath);
 int32_t krun_disable_implicit_vsock(uint32_t ctx_id);
 int32_t krun_add_vsock(uint32_t ctx_id, uint32_t tsi_features);
 int32_t krun_add_vsock_port2(uint32_t ctx_id, uint32_t port, const char *c_filepath, bool listen);
+int32_t krun_add_net_unixstream(uint32_t ctx_id, const char *c_path, int fd, uint8_t *const c_mac,
+	uint32_t features, uint32_t flags);
 int32_t krun_start_enter(uint32_t ctx_id);
 
 // libkrun_path returns the file the dynamic linker loaded libkrun from, NULL when it cannot tell.
@@ -35,6 +37,7 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"syscall"
 	"unsafe"
@@ -110,6 +113,24 @@ func (c *Ctx) AddVsockListener(port uint32, path string) error {
 	defer free(cp)
 	return check("listen for vsock port "+strconv.FormatUint(uint64(port), 10),
 		C.krun_add_vsock_port2(c.id, C.uint32_t(port), cp, true))
+}
+
+// AddNetUnixstream attaches a virtio-net card whose frames go through the Unix stream socket at
+// path, which libkrun connects to when the driver of the guest starts: something must listen there
+// by then. The card offers no offload: libkrun drops the virtio-net header both ways, and a frame
+// left to segment or to checksum would reach the other end without what it takes to do it.
+func (c *Ctx) AddNetUnixstream(path string, mac net.HardwareAddr) error {
+	if len(mac) != 6 {
+		return fmt.Errorf("libkrun: attach the card: the MAC %s is not 6 bytes", mac)
+	}
+	cp := C.CString(path)
+	defer free(cp)
+	m := [6]C.uint8_t{}
+	for i, b := range mac {
+		m[i] = C.uint8_t(b)
+	}
+	// fd -1: libkrun opens the socket by its path.
+	return check("attach the card", C.krun_add_net_unixstream(c.id, cp, -1, &m[0], 0, 0))
 }
 
 // SetConsoleOutput writes what the guest writes on its console into the file at path.

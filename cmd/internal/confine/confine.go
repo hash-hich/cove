@@ -9,6 +9,6 @@ package confine
 // path a file is reached by, and a link to it is not that path.
 type Paths struct {
 	// Read are the files the process reads, Write those it writes as well, Listen the Unix sockets
-	// it creates and accepts connections on.
-	Read, Write, Listen []string
+	// it creates and accepts connections on, Connect those it connects to.
+	Read, Write, Listen, Connect []string
 }

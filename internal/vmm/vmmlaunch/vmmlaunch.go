@@ -38,6 +38,9 @@ type Request struct {
 	// Vsock are the ports of the guest the host connects to, each through a Unix socket that must
 	// not exist yet, in one directory.
 	Vsock []vmmproto.VsockPort
+	// Card is the network card, nil for none. Its socket is in the directory of those of Vsock, and
+	// is listened on before Start.
+	Card *vmmproto.Card
 	// Log receives what cove-vmm itself says, on its standard output and error. It is a file of its
 	// own: the monitor empties the console as it opens it, and would write over it.
 	Log *os.File
@@ -127,6 +130,10 @@ func bootOf(req Request) (vmmproto.Boot, error) {
 	for _, v := range req.Vsock {
 		socket := filepath.Join(resolve(filepath.Dir(v.Socket)), filepath.Base(v.Socket))
 		boot.VM.Vsock = append(boot.VM.Vsock, vmmproto.VsockPort{Port: v.Port, Socket: socket})
+	}
+	if req.Card != nil {
+		socket := filepath.Join(resolve(filepath.Dir(req.Card.Socket)), filepath.Base(req.Card.Socket))
+		boot.VM.Card = &vmmproto.Card{Socket: socket, MAC: req.Card.MAC}
 	}
 	return boot, err
 }

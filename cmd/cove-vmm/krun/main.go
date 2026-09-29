@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -104,11 +105,11 @@ func librarySHA256() (string, error) {
 
 // configure enters the sandbox, confined to the files of vm, then gives libkrun vm.
 func configure(vm vmmproto.VM) (*libkrun.Ctx, error) {
-	if err := enterSocketDir(vm.Vsock); err != nil {
+	if err := enterSocketDir(vm); err != nil {
 		return nil, err
 	}
 	files := vm.Files()
-	paths := confine.Paths{Read: files.Read, Write: files.Write, Listen: files.Listen}
+	paths := confine.Paths{Read: files.Read, Write: files.Write, Listen: files.Listen, Connect: files.Connect}
 	if err := confine.Enter(profile, paths); err != nil {
 		return nil, err //nolint:wrapcheck // Enter names the sandbox.
 	}
@@ -132,7 +133,7 @@ func configure(vm vmmproto.VM) (*libkrun.Ctx, error) {
 	return ctx, nil
 }
 
-// attach gives libkrun the devices of vm: its disks, its console and its vsock.
+// attach gives libkrun the devices of vm: its disks, its console, its vsock and its card.
 func attach(ctx *libkrun.Ctx, vm vmmproto.VM) error {
 	for i, d := range vm.Disks {
 		if err := ctx.AddDisk("d"+strconv.Itoa(i), d.Path, d.ReadOnly); err != nil {
@@ -142,20 +143,31 @@ func attach(ctx *libkrun.Ctx, vm vmmproto.VM) error {
 	if err := ctx.SetConsoleOutput(vm.Console); err != nil {
 		return err //nolint:wrapcheck // The binding names libkrun and the call.
 	}
-	return addVsock(ctx, vm.Vsock)
+	if err := addVsock(ctx, vm.Vsock); err != nil {
+		return err
+	}
+	return addCard(ctx, vm.Card)
 }
 
-// enterSocketDir makes the directory of the sockets of ports the working directory. A Unix socket
-// is bound by a path of 104 bytes at most on macOS, and the directory of a sandbox is longer: the
-// sockets are bound by their names, relative to it. The sandbox still matches their whole paths.
-func enterSocketDir(ports []vmmproto.VsockPort) error {
-	if len(ports) == 0 {
+// enterSocketDir makes the directory of the sockets of vm, those of its ports and of its card, the
+// working directory. A Unix socket is reached by a path of 104 bytes at most on macOS, and the
+// directory of a sandbox is longer: the sockets are reached by their names, relative to it. The
+// sandbox still matches their whole paths.
+func enterSocketDir(vm vmmproto.VM) error {
+	var sockets []string
+	for _, p := range vm.Vsock {
+		sockets = append(sockets, p.Socket)
+	}
+	if vm.Card != nil {
+		sockets = append(sockets, vm.Card.Socket)
+	}
+	if len(sockets) == 0 {
 		return nil
 	}
-	dir := filepath.Dir(ports[0].Socket)
-	for _, p := range ports[1:] {
-		if filepath.Dir(p.Socket) != dir {
-			return fmt.Errorf("the sockets of the VM are in %s and %s, not in one directory", dir, filepath.Dir(p.Socket))
+	dir := filepath.Dir(sockets[0])
+	for _, s := range sockets[1:] {
+		if filepath.Dir(s) != dir {
+			return fmt.Errorf("the sockets of the VM are in %s and %s, not in one directory", dir, filepath.Dir(s))
 		}
 	}
 	if err := os.Chdir(dir); err != nil {
@@ -179,6 +191,19 @@ func addVsock(ctx *libkrun.Ctx, ports []vmmproto.VsockPort) error {
 		}
 	}
 	return nil
+}
+
+// addCard attaches card, when there is one, by the name of its socket in the working directory.
+func addCard(ctx *libkrun.Ctx, card *vmmproto.Card) error {
+	if card == nil {
+		return nil
+	}
+	mac, err := net.ParseMAC(card.MAC)
+	if err != nil {
+		return fmt.Errorf("the MAC of the card: %w", err)
+	}
+	//nolint:wrapcheck // The binding names libkrun and the call.
+	return ctx.AddNetUnixstream(filepath.Base(card.Socket), mac)
 }
 
 // answer sends cove the Status of err, and returns err, or the failure to send it.
