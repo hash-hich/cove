@@ -14,7 +14,7 @@ HOSTARCH := $(shell go env GOARCH)
 # together.
 BUILD := $(shell { git rev-parse HEAD; git diff HEAD; git ls-files -z -o --exclude-standard | \
 	xargs -0 shasum -a 256; } | shasum -a 256 | cut -c 1-16)
-BUILD_LDFLAGS := -X gitlab.com/hich-hich/cove/internal/vmm/vmmproto.build=$(BUILD)
+BUILD_LDFLAGS := -X gitlab.com/hich-hich/cove/internal/process.build=$(BUILD)
 
 # LIBEXEC holds what cove runs a VM with, found beside the bin directory of cove: cove-vmm, the
 # libkrun it links, the kernel and the init.

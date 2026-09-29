@@ -8,41 +8,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 
-	"golang.org/x/sys/unix"
-
+	"gitlab.com/hich-hich/cove/internal/process"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmproto"
 )
 
 // Program is the name in Dir of the cove-vmm that runs libkrun, the one monitor cove drives yet.
 const Program = "cove-vmm-krun"
-
-// Dir returns the directory of the files cove runs a VM with, cove-vmm among them: libexec beside
-// the bin directory cove was started from. It is found from the executable, never from PATH,
-// since it decides what monitor runs the VM. A missing libexec is named with how to get it, since
-// the error comes after the image was pulled and a bare missing file would not say why.
-func Dir() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("find cove: %w", err)
-	}
-	exe, err = filepath.EvalSymlinks(exe)
-	if err != nil {
-		return "", fmt.Errorf("find cove: %w", err)
-	}
-	dir := filepath.Join(filepath.Dir(filepath.Dir(exe)), "libexec")
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("no libexec beside cove, at %s: make build builds cove with it", dir)
-	} else if err != nil {
-		return "", fmt.Errorf("find libexec: %w", err)
-	}
-	return dir, nil
-}
 
 // Request is the VM to start. Its files exist, the console included: the monitor opens each one by
 // its path, and may create none.
@@ -66,7 +41,7 @@ type Request struct {
 	// Log receives what cove-vmm itself says, on its standard output and error. It is a file of its
 	// own: the monitor empties the console as it opens it, and would write over it.
 	Log *os.File
-	// Lock, when not nil, is a file under a lock of flock that cove-vmm inherits on vmmproto.Lock
+	// Lock, when not nil, is a file under a lock of flock that cove-vmm inherits on process.Lock
 	// and never touches: the lock is held for as long as cove-vmm lives, and the kernel releases it
 	// when it ends, by whatever means, which is how cove tells a VM that runs from one that ended.
 	Lock *os.File
@@ -81,35 +56,22 @@ type VM struct {
 	err   error
 }
 
-// Start starts the cove-vmm of dir and gives it req. It returns once the monitor holds the VM and
-// starts it, or with the reason it could not. cove-vmm runs in a session of its own, without the
-// environment of cove and in the root directory, and outlives cove: the VM is stopped by other
-// means than the death of whoever created it.
+// Start starts the cove-vmm of dir, the libexec beside cove, and gives it req. It returns once the
+// monitor holds the VM and starts it, or with the reason it could not. cove-vmm outlives cove, as
+// the package process starts it: the VM is stopped by other means than the death of whoever
+// created it, and a VM that has not started is killed by Start itself.
 func Start(ctx context.Context, dir string, req Request) (*VM, error) {
 	boot, err := bootOf(req)
 	if err != nil {
 		return nil, err
 	}
-	fds, err := socketpair()
+	pair, err := process.Socketpair()
 	if err != nil {
-		return nil, fmt.Errorf("create the pipe of cove-vmm: %w", err)
+		return nil, fmt.Errorf("start %s: %w", Program, err)
 	}
-	ours, theirs := os.NewFile(uintptr(fds[0]), "pipe"), os.NewFile(uintptr(fds[1]), "pipe")
+	ours, theirs := pair[0], pair[1]
 	defer func() { _ = ours.Close() }()
-
-	// Not CommandContext: the end of ctx must not kill a VM that started, and a VM that has not is
-	// killed by Start itself.
-	//nolint:gosec,noctx // G204: the program is cove-vmm beside cove, and it takes no argument.
-	cmd := exec.Command(filepath.Join(dir, Program))
-	cmd.Dir = "/"
-	cmd.Env = []string{}
-	cmd.Stdout, cmd.Stderr = req.Log, req.Log
-	// ExtraFiles puts its first file on descriptor 3, vmmproto.Pipe, and the next on vmmproto.Lock.
-	cmd.ExtraFiles = []*os.File{theirs}
-	if req.Lock != nil {
-		cmd.ExtraFiles = append(cmd.ExtraFiles, req.Lock)
-	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd := process.Command(dir, Program, req.Log, theirs, req.Lock)
 	err = cmd.Start()
 	_ = theirs.Close()
 	if err != nil {
@@ -132,20 +94,6 @@ func Start(ctx context.Context, dir string, req Request) (*VM, error) {
 		return nil, err
 	}
 	return vm, nil
-}
-
-// socketpair returns a pair of connected sockets that no other program started meanwhile inherits.
-// macOS has no SOCK_CLOEXEC, so the flag is set after, under the lock os/exec forks under.
-func socketpair() ([2]int, error) {
-	syscall.ForkLock.RLock()
-	defer syscall.ForkLock.RUnlock()
-	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
-	if err != nil {
-		return fds, err //nolint:wrapcheck // The caller names the pipe.
-	}
-	unix.CloseOnExec(fds[0])
-	unix.CloseOnExec(fds[1])
-	return fds, nil
 }
 
 // bootOf returns the Boot of req, each file named by its absolute path with no link left in it:
@@ -185,15 +133,15 @@ func bootOf(req Request) (vmmproto.Boot, error) {
 
 // handshake checks who cove-vmm is, sends it the VM, and waits for its answer.
 func (vm *VM) handshake(pipe io.ReadWriter, boot vmmproto.Boot) error {
-	r := vmmproto.NewReceiver(pipe)
+	r := process.NewReceiver(pipe)
 	if err := r.Receive(&vm.Hello); err != nil {
 		return vm.failed(err)
 	}
-	if vm.Hello.Build != vmmproto.Build() {
+	if vm.Hello.Build != process.Build() {
 		return fmt.Errorf("%s comes from build %q and cove from build %q: build both with make",
-			Program, vm.Hello.Build, vmmproto.Build())
+			Program, vm.Hello.Build, process.Build())
 	}
-	if err := vmmproto.Send(pipe, boot); err != nil {
+	if err := process.Send(pipe, boot); err != nil {
 		return vm.failed(err)
 	}
 	var status vmmproto.Status
@@ -220,8 +168,8 @@ func (vm *VM) failed(err error) error {
 func (vm *VM) Pid() int { return vm.cmd.Process.Pid }
 
 // Process returns what names the cove-vmm of vm for good, to be killed later by another cove.
-func (vm *VM) Process() (Process, error) {
-	started, ok, err := startTime(vm.Pid())
+func (vm *VM) Process() (process.Process, error) {
+	p, ok, err := process.Find(vm.Pid())
 	if err == nil && !ok {
 		// A process gone from the table was reaped, so how it exited is known.
 		<-vm.done
@@ -230,7 +178,7 @@ func (vm *VM) Process() (Process, error) {
 			err = fmt.Errorf("%w: %w", err, vm.err)
 		}
 	}
-	return Process{PID: vm.Pid(), Started: started}, err
+	return p, err
 }
 
 // Done is closed when cove-vmm has exited, while the process that started it is still there to

@@ -14,6 +14,7 @@ import (
 
 	"gitlab.com/hich-hich/cove/internal/filelock"
 	"gitlab.com/hich-hich/cove/internal/inventory"
+	"gitlab.com/hich-hich/cove/internal/process"
 	"gitlab.com/hich-hich/cove/internal/vminit/control"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmlaunch"
 )
@@ -208,9 +209,12 @@ func kill(dir string) error {
 	if err != nil {
 		return fmt.Errorf("find the cove-vmm to kill: %w", err)
 	}
-	var p vmmlaunch.Process
+	var p process.Process
 	if err := json.Unmarshal(out, &p); err != nil {
 		return fmt.Errorf("find the cove-vmm to kill: %s: %w", processFile, err)
 	}
-	return p.Kill() //nolint:wrapcheck // Kill names cove-vmm.
+	if err := p.Kill(); err != nil {
+		return fmt.Errorf("cove-vmm: %w", err)
+	}
+	return nil
 }

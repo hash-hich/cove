@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"gitlab.com/hich-hich/cove/internal/process"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmproto"
 )
 
@@ -20,10 +21,10 @@ func TestMessagesGoThroughInTheirOrder(t *testing.T) {
 		CPUs: 2, MemoryMiB: 2048, Kernel: "/k", KernelFormat: vmmproto.KernelRaw, Initramfs: "/i",
 		Cmdline: "console=hvc0", Disks: []vmmproto.Disk{{Path: "/l", ReadOnly: true}, {Path: "/w"}}, Console: "/c",
 	}}
-	require.NoError(t, vmmproto.Send(&pipe, hello))
-	require.NoError(t, vmmproto.Send(&pipe, boot))
+	require.NoError(t, process.Send(&pipe, hello))
+	require.NoError(t, process.Send(&pipe, boot))
 
-	r := vmmproto.NewReceiver(&pipe)
+	r := process.NewReceiver(&pipe)
 	var gotHello vmmproto.Hello
 	var gotBoot vmmproto.Boot
 	require.NoError(t, r.Receive(&gotHello))
@@ -37,7 +38,7 @@ func TestMessagesGoThroughInTheirOrder(t *testing.T) {
 func TestReceiveRefusesAFieldItDoesNotKnow(t *testing.T) {
 	t.Parallel()
 
-	r := vmmproto.NewReceiver(strings.NewReader(`{"build":"b","tsi":true}` + "\n"))
+	r := process.NewReceiver(strings.NewReader(`{"build":"b","tsi":true}` + "\n"))
 
 	var hello vmmproto.Hello
 	err := r.Receive(&hello)

@@ -20,6 +20,7 @@ import (
 
 	"gitlab.com/hich-hich/cove/internal/erofs"
 	"gitlab.com/hich-hich/cove/internal/inventory"
+	"gitlab.com/hich-hich/cove/internal/process"
 	"gitlab.com/hich-hich/cove/internal/rwdisk"
 	"gitlab.com/hich-hich/cove/internal/vminit/control"
 	"gitlab.com/hich-hich/cove/internal/vminit/initramfs"
@@ -93,7 +94,7 @@ type Sandbox struct {
 // the inventory first, and its cove-vmm holds its lock from then on. A sandbox that fails is
 // removed, its VM included, and the error carries what cove-vmm and the console said.
 func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err error) {
-	libexec, err := vmmlaunch.Dir()
+	libexecDir, err := process.Dir()
 	if err != nil {
 		return nil, err //nolint:wrapcheck // Dir names libexec and how to get it.
 	}
@@ -120,7 +121,7 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 		// cove-vmm holds the lock from now on, and alone once cove ends.
 		lock.Close()
 	}()
-	vmReq, err := write(libexec, dir, req, size)
+	vmReq, err := write(libexecDir, dir, req, size)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +131,7 @@ func Create(ctx context.Context, root string, req Request) (_ *Sandbox, err erro
 		return nil, fmt.Errorf("create the log of cove-vmm: %w", err)
 	}
 	vmReq.Log, vmReq.Lock = log, lock.File()
-	vm, err := vmmlaunch.Start(ctx, libexec, vmReq)
+	vm, err := vmmlaunch.Start(ctx, libexecDir, vmReq)
 	_ = log.Close()
 	if err != nil {
 		return nil, withConsole(err, dir)
@@ -166,10 +167,10 @@ func WriteDisk(dir string) string {
 }
 
 // write writes the files of the sandbox in dir, and returns the VM that boots from them.
-func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Request, error) {
+func write(libexecDir, dir string, req Request, size rwdisk.Size) (vmmlaunch.Request, error) {
 	vm := vmmlaunch.Request{
 		CPUs: req.CPUs, MemoryMiB: req.MemoryMiB, Cmdline: cmdline,
-		Kernel: filepath.Join(libexec, kernelFile), KernelFormat: kernelFormat(),
+		Kernel: filepath.Join(libexecDir, kernelFile), KernelFormat: kernelFormat(),
 		Initramfs: filepath.Join(dir, initramfsFile), Console: filepath.Join(dir, consoleFile),
 		Vsock: []vmmproto.VsockPort{
 			{Port: control.Port, Socket: filepath.Join(dir, controlFile)},
@@ -193,7 +194,7 @@ func write(libexec, dir string, req Request, size rwdisk.Size) (vmmlaunch.Reques
 	if err != nil {
 		return vm, err
 	}
-	if err := writeInitramfs(filepath.Join(libexec, initFile), vm.Initramfs, run); err != nil {
+	if err := writeInitramfs(filepath.Join(libexecDir, initFile), vm.Initramfs, run); err != nil {
 		return vm, err
 	}
 	// The monitor opens the console by its path, and may create no file.

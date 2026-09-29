@@ -22,6 +22,7 @@ import (
 
 	"gitlab.com/hich-hich/cove/cmd/cove-vmm/krun/internal/libkrun"
 	"gitlab.com/hich-hich/cove/cmd/internal/confine"
+	"gitlab.com/hich-hich/cove/internal/process"
 	"gitlab.com/hich-hich/cove/internal/vmm/vmmproto"
 )
 
@@ -48,7 +49,7 @@ func main() {
 // run returns only when the VM could not be started: once it starts, libkrun owns the process and
 // exits it when the guest powers off.
 func run() error {
-	pipe := os.NewFile(vmmproto.Pipe, "pipe")
+	pipe := os.NewFile(process.Pipe, "pipe")
 	if pipe == nil {
 		return errors.New("started without the pipe of cove")
 	}
@@ -56,13 +57,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := vmmproto.Send(pipe, vmmproto.Hello{
-		Build: vmmproto.Build(), VMM: "libkrun " + libkrunVersion, LibrarySHA256: sum,
+	if err := process.Send(pipe, vmmproto.Hello{
+		Build: process.Build(), VMM: "libkrun " + libkrunVersion, LibrarySHA256: sum,
 	}); err != nil {
 		return err //nolint:wrapcheck // Send names the message.
 	}
 	var boot vmmproto.Boot
-	if err := vmmproto.NewReceiver(pipe).Receive(&boot); err != nil {
+	if err := process.NewReceiver(pipe).Receive(&boot); err != nil {
 		return err //nolint:wrapcheck // Receive names the message.
 	}
 	ctx, err := configure(boot.VM)
@@ -186,7 +187,7 @@ func answer(pipe io.Writer, err error) error {
 	if err != nil {
 		s.Error = err.Error()
 	}
-	if sendErr := vmmproto.Send(pipe, s); sendErr != nil {
+	if sendErr := process.Send(pipe, s); sendErr != nil {
 		return errors.Join(err, sendErr)
 	}
 	return err
