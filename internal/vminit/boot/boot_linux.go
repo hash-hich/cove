@@ -18,6 +18,7 @@ import (
 	"gitlab.com/hich-hich/cove/internal/vminit/control"
 	"gitlab.com/hich-hich/cove/internal/vminit/imageuser"
 	"gitlab.com/hich-hich/cove/internal/vminit/launch"
+	"gitlab.com/hich-hich/cove/internal/vminit/network"
 	"gitlab.com/hich-hich/cove/internal/vminit/spec"
 	"gitlab.com/hich-hich/cove/internal/vminit/turn"
 )
@@ -349,8 +350,12 @@ func fillVolume(v, target, dir string) error {
 	return nil
 }
 
-// name gives the VM its name and its resolvers, and brings the loopback up. The files are written
-// in the upper, never bound over the image: the agent may edit them as on a machine.
+// card is the interface the kernel names the one network card of the VM, the first ethernet one.
+const card = "eth0"
+
+// name gives the VM its name and its resolvers, brings the loopback up, then gives the network card
+// its address and its route when the run has one. The files are written in the upper, never bound
+// over the image: the agent may edit them as on a machine.
 func name(s *spec.Run) error {
 	if err := unix.Sethostname([]byte(s.Hostname)); err != nil {
 		return fmt.Errorf("name the VM: %w", err)
@@ -367,7 +372,14 @@ func name(s *spec.Run) error {
 			return err
 		}
 	}
-	return loopbackUp()
+	if err := loopbackUp(); err != nil {
+		return err
+	}
+	if s.Network == nil {
+		return nil
+	}
+	//nolint:wrapcheck // Configure names the interface and the step that failed.
+	return network.Configure(card, s.Network.Address, s.Network.Gateway)
 }
 
 // writeInImage writes data at p in the image root, replacing what is there: a resolv.conf that

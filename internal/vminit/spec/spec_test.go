@@ -2,6 +2,7 @@ package spec_test
 
 import (
 	"bytes"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,8 +15,11 @@ import (
 
 func valid() *spec.Run {
 	return &spec.Run{
-		Hostname:     "sandbox",
-		Nameservers:  []string{"10.0.2.3"},
+		Hostname:    "sandbox",
+		Nameservers: []string{"10.0.2.1"},
+		Network: &spec.Network{
+			Address: netip.MustParsePrefix("10.0.2.2/30"), Gateway: netip.MustParseAddr("10.0.2.1"),
+		},
 		Layers:       []spec.Layer{{Disk: spec.Disk{Size: 8192}, DiffID: "sha256:aa", Mountpoint: "/l/00"}},
 		MountOptions: []string{"xino=on"},
 		Write:        spec.Disk{Size: 1 << 30},
@@ -41,14 +45,26 @@ func TestReadWhatWasWritten(t *testing.T) {
 	require.Equal(t, valid(), got)
 }
 
+func TestReadARunWithoutACard(t *testing.T) {
+	t.Parallel()
+	s := valid()
+	s.Network = nil
+	var buf bytes.Buffer
+	require.NoError(t, s.Encode(&buf))
+
+	got, err := spec.Decode(&buf)
+	require.NoError(t, err)
+	require.Nil(t, got.Network)
+}
+
 func TestDecodeRefusesAFieldItDoesNotKnow(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	require.NoError(t, valid().Encode(&buf))
-	withMore := strings.Replace(buf.String(), `"hostname"`, `"network": "tap", "hostname"`, 1)
+	withMore := strings.Replace(buf.String(), `"hostname"`, `"tap": "tap0", "hostname"`, 1)
 
 	_, err := spec.Decode(strings.NewReader(withMore))
-	require.ErrorContains(t, err, `unknown field "network"`)
+	require.ErrorContains(t, err, `unknown field "tap"`)
 }
 
 func TestDecodeRefusesWhatTheInitCannotActOn(t *testing.T) {
@@ -70,6 +86,15 @@ func TestDecodeRefusesWhatTheInitCannotActOn(t *testing.T) {
 		{"no project", func(s *spec.Run) { s.Project = "" }, `names the project ""`},
 		{"project climbing", func(s *spec.Run) { s.Project = ".." }, `names the project ".."`},
 		{"project as a path", func(s *spec.Run) { s.Project = "a/b" }, `names the project "a/b"`},
+		{"card without address", func(s *spec.Run) { s.Network.Address = netip.Prefix{} }, `the address "invalid Prefix"`},
+		{"card on IPv6", func(s *spec.Run) { s.Network.Address = netip.MustParsePrefix("fd00::2/64") }, `"fd00::2/64"`},
+		{"gateway off the network", func(s *spec.Run) {
+			s.Network.Gateway = netip.MustParseAddr("10.0.2.5")
+		}, `the gateway "10.0.2.5" off the network 10.0.2.0/30`},
+		{"gateway on the guest", func(s *spec.Run) {
+			s.Network.Gateway = netip.MustParseAddr("10.0.2.2")
+		}, `the gateway "10.0.2.2"`},
+		{"no gateway", func(s *spec.Run) { s.Network.Gateway = netip.Addr{} }, `the gateway "invalid IP"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

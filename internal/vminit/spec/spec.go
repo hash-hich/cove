@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"path"
 	"strings"
@@ -37,6 +38,9 @@ type Run struct {
 	Hostname string `json:"hostname"`
 	// Nameservers are the resolvers written in /etc/resolv.conf, none when empty.
 	Nameservers []string `json:"nameservers,omitempty"`
+	// Network is the address of the network card of the VM and its gateway, nil for a VM without a
+	// card.
+	Network *Network `json:"network,omitempty"`
 
 	// Layers are the read only disks of the image, the highest first, attached in this order.
 	Layers []Layer `json:"layers"`
@@ -61,6 +65,15 @@ type Run struct {
 	// powered off when it ends, its exit code written on the console: the way to exercise the
 	// init before a channel carries the turns.
 	Command []string `json:"command,omitempty"`
+}
+
+// Network is what the init gives the network card: an address, and a route to every other address
+// through the gateway.
+type Network struct {
+	// Address is the IPv4 address of the guest, with the prefix of the network of the card.
+	Address netip.Prefix `json:"address"`
+	// Gateway is the other end of the card, on the network of Address.
+	Gateway netip.Addr `json:"gateway"`
 }
 
 // Disk is a disk attached to the VM. Disks carry no name the guest could read on every backend, so
@@ -120,6 +133,9 @@ func (s *Run) check() error {
 	if err := s.checkDisks(); err != nil {
 		return err
 	}
+	if err := s.checkNetwork(); err != nil {
+		return err
+	}
 	if s.Hostname == "" {
 		return errors.New("names no host")
 	}
@@ -128,6 +144,22 @@ func (s *Run) check() error {
 	}
 	if s.Project == "" || s.Project == "." || s.Project == ".." || strings.Contains(s.Project, "/") {
 		return fmt.Errorf("names the project %q, not one segment of a path", s.Project)
+	}
+	return nil
+}
+
+// checkNetwork refuses an address the init cannot give, IPv4 being all it configures, and a
+// gateway it could not route through, one off the network of the card.
+func (s *Run) checkNetwork() error {
+	n := s.Network
+	if n == nil {
+		return nil
+	}
+	if !n.Address.IsValid() || !n.Address.Addr().Is4() {
+		return fmt.Errorf("gives the card the address %q, not an IPv4 address with its prefix", n.Address)
+	}
+	if !n.Gateway.Is4() || !n.Address.Masked().Contains(n.Gateway) || n.Gateway == n.Address.Addr() {
+		return fmt.Errorf("puts the gateway %q off the network %s", n.Gateway, n.Address.Masked())
 	}
 	return nil
 }
