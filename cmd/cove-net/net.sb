@@ -1,0 +1,15 @@
+; The Seatbelt profile of cove-net. Everything is denied, then allowed only what cove-net was seen
+; to be refused while it served a card: the rules were found from the denials the kernel logs
+; (log show --predicate 'eventMessage CONTAINS "cove-net("'), one at a time.
+(version 1)
+(deny default)
+
+; The socket of the card is allowed after these rules, by its exact path, as Enter writes it:
+; creating it, binding it and accepting its one connection. No other file is.
+
+; The Go runtime reads the number of CPUs again as it runs, to size GOMAXPROCS, and net reads the
+; longest backlog of a listener when it listens on the card.
+(allow sysctl-read (sysctl-name "hw.ncpu" "kern.ipc.somaxconn"))
+
+; While its exit is the network of the host, cove-net connects to any address.
+(allow network-outbound (remote ip))

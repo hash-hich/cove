@@ -8,7 +8,7 @@ LIBKRUN_URLS="https://github.com/libkrun/libkrun.git"
 LIBKRUN_TAG=v1.19.5
 LIBKRUN_COMMIT=fb988873026120e0e81b31295aaa4a05d27921f2
 LIBKRUN_ARCHIVE_SHA256=2fadf4a2cbdaff4767e4f04e3f380ab4749a66d8994abc1529c0459d8afb49aa
-# Only the devices cove attaches: virtio-blk for the disks, virtio-net for the card of cove-proxy.
+# Only the devices cove attaches: virtio-blk for the disks, virtio-net for the card of cove-net.
 # The default feature, the init libkrun injects in a virtio-fs root, is left out: cove boots its
 # own init from an initramfs, and that init is C cross-compiled against a Debian sysroot.
 LIBKRUN_FEATURES=blk,net

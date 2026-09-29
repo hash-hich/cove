@@ -9,22 +9,22 @@ ARCHS := arm64 amd64
 # HOSTARCH is the architecture of the host, which is the one of its guests.
 HOSTARCH := $(shell go env GOARCH)
 
-# BUILD names the tree cove and cove-vmm are built from: its commit, what differs from it, and
-# the files git does not track yet. cove refuses a cove-vmm of another build, since the two change
-# together.
+# BUILD names the tree cove and libexec are built from: its commit, what differs from it, and the
+# files git does not track yet. cove refuses a cove-vmm or a cove-net of another build, since they
+# change together.
 BUILD := $(shell { git rev-parse HEAD; git diff HEAD; git ls-files -z -o --exclude-standard | \
 	xargs -0 shasum -a 256; } | shasum -a 256 | cut -c 1-16)
 BUILD_LDFLAGS := -X gitlab.com/hich-hich/cove/internal/process.build=$(BUILD)
 
 # LIBEXEC holds what cove runs a VM with, found beside the bin directory of cove: cove-vmm, the
-# libkrun it links, the kernel and the init.
+# libkrun it links, cove-net, the kernel and the init.
 LIBEXEC := libexec
 
 # mkemptyext4 runs in the image of its Dockerfile, where e2fsprogs is pinned, on the repository
 # mounted as it is.
 MKEMPTYEXT4 := docker run --rm -v "$(CURDIR)":/cove -w /cove/tools/mkemptyext4 cove-mkemptyext4
 
-.PHONY: help build cove cove-init cove-vmm libkrun libexec kernel image-sandbox image-go fmt lint test check \
+.PHONY: help build cove cove-init cove-net cove-vmm libkrun libexec kernel image-sandbox image-go fmt lint test check \
 	emptyext4 emptyext4-check mkemptyext4-docker-image
 
 ## help: list the targets and what each one does
@@ -36,8 +36,8 @@ help:
 cove:
 	go build -ldflags "$(BUILD_LDFLAGS)" -o bin/cove ./cmd/cove
 
-## libexec: gather what cove runs a VM with into libexec: cove-vmm, libkrun, the kernel, the init
-libexec: cove-vmm cove-init
+## libexec: gather what cove runs a VM with into libexec: cove-vmm, libkrun, cove-net, the kernel, the init
+libexec: cove-vmm cove-net cove-init
 	@test -f bin/kernel/$(HOSTARCH)/kernel || { echo "no bin/kernel/$(HOSTARCH)/kernel: make kernel first"; exit 1; }
 	cp bin/kernel/$(HOSTARCH)/kernel bin/cove-init/$(HOSTARCH)/cove-init $(LIBEXEC)/
 
@@ -60,6 +60,10 @@ cove-vmm: libkrun
 		./cmd/cove-vmm/krun
 	@if [ "$$(uname -s)" = Darwin ]; then \
 		codesign -s - -f --entitlements cmd/cove-vmm/krun/entitlements.plist $(LIBEXEC)/cove-vmm-krun; fi
+
+## cove-net: build the process that holds the TCP/IP stack behind the card of a VM into libexec
+cove-net:
+	CGO_ENABLED=1 go build -ldflags "$(BUILD_LDFLAGS)" -o $(LIBEXEC)/cove-net ./cmd/cove-net
 
 ## cove-init: build the init of the VM, static, into bin/cove-init/<arch>/cove-init for each guest
 cove-init:

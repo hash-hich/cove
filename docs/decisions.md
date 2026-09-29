@@ -18,6 +18,61 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-29: the card of the VM ends in cove-net, one process per VM
+
+**Decided.** `cove-net`, one Go process per VM beside `cove-vmm` and confined
+by the same package, holds the TCP/IP stack behind the card. `cove` starts it first; `cove-vmm` joins it
+through libkrun's `unixstream` socket in the sandbox directory. It ends the
+guest's TCP connections and DNS queries and hands each, unread, to one exit:
+the host network until the cove daemon exists, the daemon after, nothing else in
+`cove-net` changing. No other UDP, no ICMP, no DHCP: the init sets a fixed
+address, the route and a resolver on the gateway. `cove-net` holds no file,
+the network only while its exit is the host, and ends when the card's
+connection closes or when none came in time.
+
+**Why.** The confinements differ: files and no network for `cove-vmm`, one
+socket and no file for `cove-net`. A panic of the stack does not take the VM.
+Firecracker runs its monitor in a process of its own, so the split holds
+under every backend. `cove` wires the pieces, so `cove-vmm` keeps
+`process-exec` denied. libkrun connects when the guest's driver starts, so
+`cove-net` listens before `cove-vmm` runs. The policy decides on names and
+reads the traffic in clear: the names are the cove daemon's to answer, and UDP other
+than DNS, QUIC first, cannot be read. Measured, an idle stack weighs under
+10 MB against the ~270 MB of a sandbox.
+
+**Rejected.** The stack in `cove-vmm`: one process with both files and a
+network. `cove-vmm` starting `cove-net`: `process-exec` in its profile and a
+supervisor in each monitor. `unixgram`: libkrun binds a socket of its own
+under `$TMPDIR`, named after its pid, which no `literal` rule names, and a
+datagram brings no end of file. One stack for every sandbox: a guest's frames
+reach a process holding the connections of the others. All of UDP: a flow
+table with timeouts, for traffic the policy cannot read. DHCP: a server to
+hand out an address cove already knows.
+
+## 2026-09-29: cove-net links the netstack of gVisor, not gvisor-tap-vsock
+
+**Decided.** `cove-net` links `gvisor.dev/gvisor` from its `go` branch,
+vendored at `v0.0.0-20260929054635-b9efb699128a`: the stack, IPv4, ARP, TCP,
+UDP, the channel link and the `gonet` adapter, 44 packages. The frames of the
+socket and the handing to the exit are cove's code. Nothing but `cove-net`
+links it.
+
+**Why.** gVisor is maintained by Google, runs in production under `runsc`,
+and under Podman machine on macOS through gvproxy, which vendors it. It
+replaces the TCP/IP stack itself: 92 000 lines, 3.5 MB of `vendor/`, plus
+`btree` (2 000 lines), `x/time` (500) and `x/exp` (54); `x/sys` is already
+there. It builds under `CGO_ENABLED=0`. It parses every frame the guest
+writes, so it is contained, not trusted: its process holds no file, and no
+network once the cove daemon exists. gVisor tags no Go module; the `go` branch is its
+Go export, pinned by pseudo version as go-erofs is. It raises the `go`
+directive to 1.26.3.
+
+**Rejected.** gvisor-tap-vsock v0.8.9, the library of gvproxy: 450 000 lines
+and 18 MB of `vendor/` over 14 modules, among them `x/crypto` for SSH,
+`gopacket`, `miekg/dns`, a DHCP server and `logrus`, built for Podman's
+features on a gVisor of 2024-09-16. passt: Linux only. A stack of cove's own:
+TCP alone is most of the 92 000 lines.
+
 ## 2026-09-27: stop asks the init over a vsock port, then kills cove-vmm
 
 **Decided.** `cove stop` sends a stop on a vsock port of the init's own,
@@ -265,10 +320,9 @@ not the default mode of kube-proxy.
 ## 2026-09-23: the guest reaches the network through virtio-net
 
 **Decided.** Every backend gives the guest a virtio-net card wired to
-`cove-proxy`. TSI is
-never enabled, and `cove-vmm` holds no network socket.
+`cove-net`. TSI is never enabled, and `cove-vmm` holds no network socket.
 
-**Why.** `cove-proxy` and its TCP/IP stack exist whatever libkrun offers:
+**Why.** `cove-net` and its TCP/IP stack exist whatever libkrun offers:
 Firecracker has no TSI, and a kernel of the user has it only if it carries the
 libkrunfw patches, out of tree since the start. TSI would add a second path,
 not remove one.

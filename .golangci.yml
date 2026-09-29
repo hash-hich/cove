@@ -79,6 +79,30 @@ linters:
               desc: the User of an image is resolved in the VM, the host never links it
             - pkg: gitlab.com/hich-hich/cove/internal/vminit/network
               desc: the card is configured in the VM, the host never links it
+        # gVisor parses every frame a guest writes: it runs in cove-net alone, the process confined to
+        # the socket of the card and to the network of its exit.
+        gvisor:
+          files:
+            - "$all"
+            - "!**/cmd/cove-net/**"
+          deny:
+            - pkg: gvisor.dev
+              desc: gVisor runs in cove-net alone, the process confined to the card
+        # cove-net holds what the guest writes and a network: it links nothing of cove but what
+        # starts it and confines it.
+        cove-net:
+          list-mode: strict
+          files:
+            - "**/cmd/cove-net/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - gvisor.dev/gvisor
+            - golang.org/x/sys
+            - gitlab.com/hich-hich/cove/internal/netstack/netstackproto
+            - gitlab.com/hich-hich/cove/internal/process
+            - gitlab.com/hich-hich/cove/cmd/internal/confine
+            - gitlab.com/hich-hich/cove/cmd/cove-net
     dupl:
       # Lower values flag table-driven tests.
       threshold: 100
