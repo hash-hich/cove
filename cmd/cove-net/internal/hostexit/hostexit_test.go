@@ -14,24 +14,34 @@ import (
 
 var gateway = netip.MustParsePrefix("10.0.2.1/30")
 
-// host is a host of the tests.
+// host is a host of the tests, on a LAN and a VPN.
 func host(nameservers ...netip.AddrPort) *hostexit.Host {
-	return hostexit.New(gateway, nameservers)
+	h := hostexit.New(gateway, nameservers)
+	h.SetHostAddrs(func() ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("192.168.1.5"), netip.MustParseAddr("100.64.0.7")}, nil
+	})
+	return h
 }
 
 // The reasons of the refusals the tests expect more than once.
 const (
-	notOne = "not the address of one machine"
-	card   = "the network of the card"
+	loopback = "the loopback of the host"
+	hostAddr = "an address of the host"
+	notOne   = "not the address of one machine"
+	card     = "the network of the card"
 )
 
-func TestTargetRefusesWhatIsNotOneMachine(t *testing.T) {
+func TestTargetRefusesTheHostAndWhatIsNotOneMachine(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		dst    string
 		reason string
 	}{
+		{"127.0.0.1:3000", loopback},
+		{"127.1.2.3:22", loopback},
+		{"192.168.1.5:3000", hostAddr},
+		{"100.64.0.7:443", hostAddr},
 		{"224.0.0.251:5353", notOne},
 		{"255.255.255.255:9", notOne},
 		{"0.0.0.0:80", notOne},
@@ -78,6 +88,26 @@ func TestTargetRefusesTheDNSOfTheGatewayWithoutAResolver(t *testing.T) {
 
 	_, ok := errors.AsType[*hostexit.RefusedError](err)
 	require.True(t, ok, "%v", err)
+}
+
+func TestTargetRefusesWhenTheAddressesOfTheHostCannotBeRead(t *testing.T) {
+	t.Parallel()
+
+	h := host()
+	h.SetHostAddrs(func() ([]netip.Addr, error) { return nil, errors.New("denied") })
+
+	_, err := h.TargetOf(netip.MustParseAddrPort("160.79.104.10:443"))
+
+	require.ErrorContains(t, err, "read the addresses of the host")
+}
+
+func TestInterfaceAddrsHoldsTheLoopback(t *testing.T) {
+	t.Parallel()
+
+	addrs, err := hostexit.InterfaceAddrs()
+
+	require.NoError(t, err)
+	require.Contains(t, addrs, netip.MustParseAddr("127.0.0.1"))
 }
 
 // resolver answers every query it receives with the query followed by answer, until the test ends.

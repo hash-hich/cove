@@ -11,5 +11,8 @@
 ; longest backlog of a listener when it listens on the card.
 (allow sysctl-read (sysctl-name "hw.ncpu" "kern.ipc.somaxconn"))
 
-; While its exit is the network of the host, cove-net connects to any address.
+; While its exit is the network of the host, cove-net connects to any address, and reads the
+; addresses of the interfaces of the host at each connection: the exit refuses the host, not this
+; profile, since its addresses change with the network it joins.
 (allow network-outbound (remote ip))
+(allow sysctl-read (sysctl-name "net.routetable.0.0.3.0"))

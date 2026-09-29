@@ -1,6 +1,7 @@
 // Package hostexit is the exit of cove-net to the network of the host, the one it has until the
-// cove daemon exists: it connects wherever the guest asks, but for what is not an address of one
-// machine, and relays the DNS of the guest to the resolvers of the host without decoding it.
+// cove daemon exists: it connects wherever the guest asks, but for the host itself and what is not
+// an address of one machine, and relays the DNS of the guest to the resolvers of the host without
+// decoding it.
 package hostexit
 
 import (
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"time"
 )
 
@@ -23,6 +25,8 @@ type Host struct {
 	network     netip.Prefix
 	gateway     netip.AddrPort
 	nameservers []netip.AddrPort
+	// hostAddrs returns the addresses of the host, read again at each connection.
+	hostAddrs func() ([]netip.Addr, error)
 }
 
 // New returns the exit of a card whose gateway is gateway, which relays the DNS to nameservers, in
@@ -30,7 +34,7 @@ type Host struct {
 func New(gateway netip.Prefix, nameservers []netip.AddrPort) *Host {
 	return &Host{
 		network: gateway.Masked(), gateway: netip.AddrPortFrom(gateway.Addr(), dnsPort),
-		nameservers: nameservers,
+		nameservers: nameservers, hostAddrs: interfaceAddrs,
 	}
 }
 
@@ -64,7 +68,11 @@ func (h *Host) target(dst netip.AddrPort) (netip.AddrPort, error) {
 		}
 		return netip.AddrPortFrom(h.nameservers[0].Addr(), dnsPort), nil
 	}
-	if reason := h.refusal(dst.Addr()); reason != "" {
+	reason, err := h.refusal(dst.Addr())
+	if err != nil {
+		return netip.AddrPort{}, err
+	}
+	if reason != "" {
 		return netip.AddrPort{}, &RefusedError{Reason: reason}
 	}
 	return dst, nil
@@ -76,15 +84,47 @@ var limitedBroadcast = netip.AddrFrom4([4]byte{255, 255, 255, 255})
 // thisNetwork is 0.0.0.0/8, which names no machine.
 var thisNetwork = netip.MustParsePrefix("0.0.0.0/8")
 
-// refusal returns why a connection to a is refused, empty when it is not.
-func (h *Host) refusal(a netip.Addr) string {
+// refusal returns why a connection to a is refused, empty when it is not. The host is refused on
+// its loopback and on every address of its interfaces, read now since they change with the
+// network the host joins: the host holds the files, the credentials and the services of the user,
+// and a service that listens on every address answers on each of them.
+func (h *Host) refusal(a netip.Addr) (string, error) {
 	switch {
+	case a.IsLoopback():
+		return "the loopback of the host", nil
 	case a.IsMulticast() || a == limitedBroadcast || thisNetwork.Contains(a):
-		return "not the address of one machine"
+		return "not the address of one machine", nil
 	case h.network.Contains(a):
-		return "the network of the card"
+		return "the network of the card", nil
 	}
-	return ""
+	addrs, err := h.hostAddrs()
+	if err != nil {
+		// What cannot tell the host from another machine refuses.
+		return "", fmt.Errorf("read the addresses of the host: %w", err)
+	}
+	if slices.Contains(addrs, a) {
+		return "an address of the host", nil
+	}
+	return "", nil
+}
+
+// interfaceAddrs returns the IPv4 addresses of the interfaces of the host.
+func interfaceAddrs() ([]netip.Addr, error) {
+	ifaddrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil, err //nolint:wrapcheck // The caller names what it read.
+	}
+	var addrs []netip.Addr
+	for _, ifa := range ifaddrs {
+		ipnet, ok := ifa.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		if a, ok := netip.AddrFromSlice(ipnet.IP); ok && a.Unmap().Is4() {
+			addrs = append(addrs, a.Unmap())
+		}
+	}
+	return addrs, nil
 }
 
 // DNS relays query to the resolvers, in their order, each given resolverWait, and returns the first

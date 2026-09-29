@@ -18,6 +18,24 @@ no longer read. A rule about paths, file names or layout is not a decision and
 goes to the spec or the code comment that owns it. An entry past thirty lines
 is carrying something that belongs somewhere else.
 
+## 2026-09-29: a sandbox never reaches the host
+
+**Decided.** Every exit of `cove-net`, the host network today and the cove daemon
+after, refuses a connection to the host: its loopback and every address of
+its interfaces, read again at each connection. The guest is told nothing of
+the host: its resolver is the gateway of the card, never the host's.
+
+**Why.** The host holds the files, the credentials and the services of the
+user, and the boundary of cove is the VM. Measured on spike 06, a service of
+the Mac listening on every address answered the VM through the Mac's LAN
+address, which a refusal of the loopback alone leaves open. The addresses of
+the host change with the network it joins.
+
+**Rejected.** The loopback alone: the host answers on its other addresses.
+Every private range: cuts the forges and registries of an intranet, which is
+a question of the policy. A list handed by `cove` at start: stale once the
+host changes network.
+
 ## 2026-09-29: the card of the VM ends in cove-net, one process per VM
 
 **Decided.** `cove-net`, one Go process per VM beside `cove-vmm` and confined
